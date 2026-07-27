@@ -41,6 +41,12 @@ $allSections = $report->sections();
 
 ## Install
 
+For a tagged release:
+
+```bash
+composer require appradar/agent:^1.0
+```
+
 For local development through a path repository:
 
 ```json
