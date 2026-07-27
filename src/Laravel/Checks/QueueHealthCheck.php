@@ -29,8 +29,12 @@ class QueueHealthCheck implements StatusCheckInterface
     public function run(): QueueStatus
     {
         $connectionName = (string) config('queue.default');
-        $driver = (string) config("queue.connections.{$connectionName}.driver", $connectionName);
-        $queueName = (string) config("queue.connections.{$connectionName}.queue", 'default');
+        $connectionConfig = config("queue.connections.{$connectionName}", []);
+        $driver = (string) data_get($connectionConfig, 'driver', $connectionName);
+        $queueName = (string) data_get($connectionConfig, 'queue', 'default');
+        $retryAfter = is_numeric(data_get($connectionConfig, 'retry_after')) ? (int) data_get($connectionConfig, 'retry_after') : null;
+        $blockFor = is_numeric(data_get($connectionConfig, 'block_for')) ? (int) data_get($connectionConfig, 'block_for') : null;
+        $afterCommit = array_key_exists('after_commit', $connectionConfig) ? (bool) data_get($connectionConfig, 'after_commit') : null;
 
         try {
             $connection = $this->queue->connection($connectionName);
@@ -38,7 +42,8 @@ class QueueHealthCheck implements StatusCheckInterface
                 ? (int) $connection->pendingSize($queueName)
                 : (int) $connection->size($queueName);
             $runningJobs = method_exists($connection, 'reservedSize') ? (int) $connection->reservedSize($queueName) : 0;
-            $activeWorkers = $this->activeWorkers($connectionName, $queueName);
+            $workerInspection = $this->inspectWorkers($connectionName, $queueName);
+            $activeWorkers = $workerInspection['count'];
             $staleWaitingJobs = $this->staleWaitingJobs($connection, $queueName);
             $stuckJobs = $this->stuckRunningJobs($connection, $connectionName, $queueName);
             $activity = $this->metrics->snapshot(
@@ -63,6 +68,9 @@ class QueueHealthCheck implements StatusCheckInterface
                 connection: $connectionName,
                 driver: $driver,
                 queue: $queueName,
+                retryAfterSeconds: $retryAfter,
+                blockForSeconds: $blockFor,
+                afterCommit: $afterCommit,
                 activeWorkers: $activeWorkers,
                 workerRunning: $workerRunning,
                 pendingJobs: $pendingJobs,
@@ -71,6 +79,13 @@ class QueueHealthCheck implements StatusCheckInterface
                 stuckJobsOver1Hour: $stuckJobs,
                 processedRecently: $activity['processed_recently'],
                 failingJobsRecently: $activity['failing_jobs_recently'],
+                workerTimeoutSeconds: $workerInspection['options']['timeout'] ?? null,
+                workerSleepSeconds: $workerInspection['options']['sleep'] ?? null,
+                workerTries: $workerInspection['options']['tries'] ?? null,
+                workerMemoryMb: $workerInspection['options']['memory'] ?? null,
+                workerBackoffSeconds: $workerInspection['options']['backoff'] ?? null,
+                workerMaxTimeSeconds: $workerInspection['options']['max_time'] ?? null,
+                workerCommand: $workerInspection['command'],
             );
         } catch (Throwable $throwable) {
             return new QueueStatus(
@@ -79,6 +94,9 @@ class QueueHealthCheck implements StatusCheckInterface
                 connection: $connectionName,
                 driver: $driver,
                 queue: $queueName,
+                retryAfterSeconds: $retryAfter,
+                blockForSeconds: $blockFor,
+                afterCommit: $afterCommit,
                 activeWorkers: 0,
                 workerRunning: false,
                 pendingJobs: 0,
@@ -87,14 +105,34 @@ class QueueHealthCheck implements StatusCheckInterface
                 stuckJobsOver1Hour: 0,
                 processedRecently: false,
                 failingJobsRecently: false,
+                workerTimeoutSeconds: null,
+                workerSleepSeconds: null,
+                workerTries: null,
+                workerMemoryMb: null,
+                workerBackoffSeconds: null,
+                workerMaxTimeSeconds: null,
+                workerCommand: null,
                 message: $throwable->getMessage(),
             );
         }
     }
 
-    private function activeWorkers(string $connectionName, string $queueName): int
+    /**
+     * @return array{count:int, options:array<string,int>, command:?string}
+     */
+    private function inspectWorkers(string $connectionName, string $queueName): array
     {
-        return $this->horizonWorkers($connectionName, $queueName) ?: $this->processWorkers($connectionName, $queueName);
+        $processWorkers = $this->processWorkers($connectionName, $queueName);
+
+        if ($processWorkers['count'] > 0) {
+            return $processWorkers;
+        }
+
+        return [
+            'count' => $this->horizonWorkers($connectionName, $queueName),
+            'options' => [],
+            'command' => null,
+        ];
     }
 
     private function horizonWorkers(string $connectionName, string $queueName): int
@@ -118,9 +156,12 @@ class QueueHealthCheck implements StatusCheckInterface
         }
     }
 
-    private function processWorkers(string $connectionName, string $queueName): int
+    /**
+     * @return array{count:int, options:array<string,int>, command:?string}
+     */
+    private function processWorkers(string $connectionName, string $queueName): array
     {
-        foreach ([['ps', '-eo', 'command='], ['ps', '-axo', 'command=']] as $command) {
+        foreach ([['ps', '-eo', 'pid=,command='], ['ps', '-axo', 'pid=,command=']] as $command) {
             try {
                 $process = new Process($command);
                 $process->setTimeout(5);
@@ -130,29 +171,45 @@ class QueueHealthCheck implements StatusCheckInterface
                     continue;
                 }
 
-                $count = $this->countMatchingWorkerProcesses($process->getOutput(), $connectionName, $queueName);
+                $matches = $this->matchingWorkerProcesses($process->getOutput(), $connectionName, $queueName);
+                $count = count($matches);
 
                 if ($count > 0) {
-                    return $count;
+                    $sample = $this->workerCommandSample($matches);
+
+                    return [
+                        'count' => $count,
+                        'options' => $sample ? $this->parseWorkerOptions($sample['command']) : [],
+                        'command' => $sample['command'] ?? null,
+                    ];
                 }
             } catch (Throwable) {
                 continue;
             }
         }
 
-        return 0;
+        return [
+            'count' => 0,
+            'options' => [],
+            'command' => null,
+        ];
     }
 
-    private function countMatchingWorkerProcesses(string $output, string $connectionName, string $queueName): int
+    /**
+     * @return array<int, array{pid:int,command:string}>
+     */
+    private function matchingWorkerProcesses(string $output, string $connectionName, string $queueName): array
     {
         $artisanPath = base_path('artisan');
         $basePath = base_path();
         $commands = preg_split('/\r\n|\r|\n/', $output) ?: [];
 
-        return (int) collect($commands)
-            ->map(fn (string $line) => trim($line))
-            ->filter(fn (string $line) => $line !== '')
-            ->filter(function (string $line) use ($artisanPath, $basePath): bool {
+        return collect($commands)
+            ->map(fn (string $line) => $this->parseProcessLine($line))
+            ->filter(fn (?array $process) => $process !== null)
+            ->filter(function (array $process) use ($artisanPath, $basePath): bool {
+                $line = $process['command'];
+
                 if (!str_contains($line, 'artisan')) {
                     return false;
                 }
@@ -165,13 +222,47 @@ class QueueHealthCheck implements StatusCheckInterface
                     return false;
                 }
 
-                return str_contains($line, $artisanPath)
+                return $this->matchesBasePath($process['pid'], $basePath)
+                    || str_contains($line, $artisanPath)
                     || str_contains($line, $basePath)
-                    || preg_match('/(^| )php artisan (queue:work|queue:listen|horizon)( |$)/', $line) === 1
-                    || preg_match('/(^| )artisan (queue:work|queue:listen|horizon)( |$)/', $line) === 1;
+                    || preg_match('/(^| )php artisan (queue:work|queue:listen|horizon)( |$)/', $line) === 1 && $this->matchesBasePath($process['pid'], $basePath)
+                    || preg_match('/(^| )artisan (queue:work|queue:listen|horizon)( |$)/', $line) === 1 && $this->matchesBasePath($process['pid'], $basePath);
             })
-            ->filter(fn (string $line) => $this->matchesQueueProcess($line, $connectionName, $queueName))
-            ->count();
+            ->filter(fn (array $process) => $this->matchesQueueProcess($process['command'], $connectionName, $queueName))
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return array{pid:int,command:string}|null
+     */
+    private function parseProcessLine(string $line): ?array
+    {
+        $line = trim($line);
+
+        if ($line === '' || !preg_match('/^(\d+)\s+(.*)$/', $line, $matches)) {
+            return null;
+        }
+
+        return [
+            'pid' => (int) $matches[1],
+            'command' => trim($matches[2]),
+        ];
+    }
+
+    private function matchesBasePath(int $pid, string $basePath): bool
+    {
+        if ($pid <= 0) {
+            return false;
+        }
+
+        $cwd = @readlink("/proc/{$pid}/cwd");
+
+        if (!is_string($cwd) || $cwd === '') {
+            return false;
+        }
+
+        return $cwd === $basePath;
     }
 
     private function matchesQueueProcess(string $line, string $connectionName, string $queueName): bool
@@ -197,6 +288,55 @@ class QueueHealthCheck implements StatusCheckInterface
         }
 
         return !str_contains($line, '--queue');
+    }
+
+    /**
+     * @param  array<int, array{pid:int,command:string}>  $processes
+     * @return array{pid:int,command:string}|null
+     */
+    private function workerCommandSample(array $processes): ?array
+    {
+        if ($processes === []) {
+            return null;
+        }
+
+        usort($processes, function (array $left, array $right): int {
+            $leftScore = count($this->parseWorkerOptions($left['command']));
+            $rightScore = count($this->parseWorkerOptions($right['command']));
+
+            if ($leftScore === $rightScore) {
+                return strlen($right['command']) <=> strlen($left['command']);
+            }
+
+            return $rightScore <=> $leftScore;
+        });
+
+        return $processes[0] ?? null;
+    }
+
+    /**
+     * @return array<string, int>
+     */
+    private function parseWorkerOptions(string $command): array
+    {
+        $map = [
+            'timeout' => '--timeout',
+            'sleep' => '--sleep',
+            'tries' => '--tries',
+            'memory' => '--memory',
+            'backoff' => '--backoff',
+            'max_time' => '--max-time',
+        ];
+
+        $options = [];
+
+        foreach ($map as $key => $flag) {
+            if (preg_match('/'.preg_quote($flag, '/').'(?:=|\s+)(\d+)/', $command, $matches) === 1) {
+                $options[$key] = (int) $matches[1];
+            }
+        }
+
+        return $options;
     }
 
     private function status(string $driver, bool $workerRunning, int $pendingJobs, int $staleWaitingJobs, int $stuckJobs, bool $processedRecently, bool $failingJobsRecently): int
