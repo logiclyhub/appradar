@@ -2,13 +2,14 @@
 
 namespace AppRadar\Agent\Laravel\Checks;
 
-use Illuminate\Contracts\Queue\Factory as QueueFactory;
-use Illuminate\Queue\RedisQueue;
-use Laravel\Horizon\Contracts\SupervisorRepository;
 use AppRadar\Agent\Core\Contracts\StatusCheckInterface;
 use AppRadar\Agent\Core\StatusCodes;
 use AppRadar\Agent\Data\QueueStatus;
 use AppRadar\Agent\Laravel\Support\QueueMetricsStore;
+use Illuminate\Contracts\Queue\Factory as QueueFactory;
+use Illuminate\Queue\RedisQueue;
+use Laravel\Horizon\Contracts\SupervisorRepository;
+use Symfony\Component\Process\Process;
 use Throwable;
 
 class QueueHealthCheck implements StatusCheckInterface
@@ -46,7 +47,7 @@ class QueueHealthCheck implements StatusCheckInterface
                 recentWindowSeconds: self::ACTIVITY_WINDOW_SECONDS,
                 defaultProcessedRecently: $pendingJobs === 0 && $runningJobs === 0,
             );
-            $workerRunning = $activeWorkers > 0;
+            $workerRunning = $activeWorkers > 0 || $activity['processed_recently'];
 
             return new QueueStatus(
                 status: $this->status(
@@ -93,6 +94,11 @@ class QueueHealthCheck implements StatusCheckInterface
 
     private function activeWorkers(string $connectionName, string $queueName): int
     {
+        return $this->horizonWorkers($connectionName, $queueName) ?: $this->processWorkers($connectionName, $queueName);
+    }
+
+    private function horizonWorkers(string $connectionName, string $queueName): int
+    {
         if (!class_exists(SupervisorRepository::class) || !app()->bound(SupervisorRepository::class)) {
             return 0;
         }
@@ -110,6 +116,87 @@ class QueueHealthCheck implements StatusCheckInterface
         } catch (Throwable) {
             return 0;
         }
+    }
+
+    private function processWorkers(string $connectionName, string $queueName): int
+    {
+        foreach ([['ps', '-eo', 'command='], ['ps', '-axo', 'command=']] as $command) {
+            try {
+                $process = new Process($command);
+                $process->setTimeout(5);
+                $process->run();
+
+                if (!$process->isSuccessful()) {
+                    continue;
+                }
+
+                $count = $this->countMatchingWorkerProcesses($process->getOutput(), $connectionName, $queueName);
+
+                if ($count > 0) {
+                    return $count;
+                }
+            } catch (Throwable) {
+                continue;
+            }
+        }
+
+        return 0;
+    }
+
+    private function countMatchingWorkerProcesses(string $output, string $connectionName, string $queueName): int
+    {
+        $artisanPath = base_path('artisan');
+        $basePath = base_path();
+        $commands = preg_split('/\r\n|\r|\n/', $output) ?: [];
+
+        return (int) collect($commands)
+            ->map(fn (string $line) => trim($line))
+            ->filter(fn (string $line) => $line !== '')
+            ->filter(function (string $line) use ($artisanPath, $basePath): bool {
+                if (!str_contains($line, 'artisan')) {
+                    return false;
+                }
+
+                if (
+                    !str_contains($line, 'queue:work')
+                    && !str_contains($line, 'queue:listen')
+                    && !str_contains($line, 'horizon')
+                ) {
+                    return false;
+                }
+
+                return str_contains($line, $artisanPath)
+                    || str_contains($line, $basePath)
+                    || preg_match('/(^| )php artisan (queue:work|queue:listen|horizon)( |$)/', $line) === 1
+                    || preg_match('/(^| )artisan (queue:work|queue:listen|horizon)( |$)/', $line) === 1;
+            })
+            ->filter(fn (string $line) => $this->matchesQueueProcess($line, $connectionName, $queueName))
+            ->count();
+    }
+
+    private function matchesQueueProcess(string $line, string $connectionName, string $queueName): bool
+    {
+        $queueMatches = [
+            '--queue='.$queueName,
+            '--queue '.$queueName,
+            '--queue='.$connectionName,
+            '--queue '.$connectionName,
+        ];
+
+        $connectionMatches = [
+            ' queue:work '.$connectionName,
+            ' queue:listen '.$connectionName,
+        ];
+
+        if (collect($queueMatches)->contains(fn (string $needle) => str_contains($line, $needle))) {
+            return true;
+        }
+
+        if (collect($connectionMatches)->contains(fn (string $needle) => str_contains($line, $needle))) {
+            return true;
+        }
+
+        return !str_contains($line, '--queue');
     }
 
     private function status(string $driver, bool $workerRunning, int $pendingJobs, int $staleWaitingJobs, int $stuckJobs, bool $processedRecently, bool $failingJobsRecently): int
