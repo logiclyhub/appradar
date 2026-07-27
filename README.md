@@ -12,8 +12,8 @@ Framework-aware application agent for AppRadar. Laravel is the first supported a
 
 It registers:
 
-- `GET /local/status`
-- `POST /local/status/tests/run`
+- `GET /status`
+- `POST /status/tests/run`
 
 It also wires:
 
@@ -92,8 +92,8 @@ php artisan vendor:publish --tag=appradar-config
 
 Default config:
 
-- route path: `local/status`
-- only local environment: `true`
+- route path: `status`
+- only local environment: `false`
 - status storage path: `app/status`
 - scheduler heartbeat: every minute
 

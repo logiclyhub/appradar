@@ -2,13 +2,13 @@
 
 return [
     'route' => [
-        'path' => 'local/status',
+        'path' => 'status',
         'middleware' => ['web'],
-        'name' => 'local.status',
-        'tests_name' => 'local.status.tests.run',
+        'name' => 'appradar.status',
+        'tests_name' => 'appradar.status.tests.run',
     ],
 
-    'only_local' => true,
+    'only_local' => false,
 
     'storage_path' => 'app/status',
 
