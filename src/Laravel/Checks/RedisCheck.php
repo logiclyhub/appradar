@@ -3,16 +3,14 @@
 namespace AppRadar\Agent\Laravel\Checks;
 
 use Illuminate\Support\Facades\Redis;
-use AppRadar\Agent\Core\CheckType;
 use AppRadar\Agent\Core\Contracts\StatusCheckInterface;
 use AppRadar\Agent\Core\StatusCodes;
-use AppRadar\Agent\Core\ValueObjects\CheckResult;
-use AppRadar\Agent\Laravel\ValueObjects\RedisMeta;
+use AppRadar\Agent\Data\RedisStatus;
 use Throwable;
 
 class RedisCheck implements StatusCheckInterface
 {
-    public function run(): CheckResult
+    public function run(): RedisStatus
     {
         $connectionName = 'default';
 
@@ -24,35 +22,29 @@ class RedisCheck implements StatusCheckInterface
             $info = $this->normalizeInfo($connection->info('memory'));
             $maxMemory = isset($info['maxmemory']) ? (int) $info['maxmemory'] : null;
 
-            return new CheckResult(
-                type: CheckType::Redis,
+            return new RedisStatus(
                 status: $responseTimeMs > 100 ? StatusCodes::WARN : StatusCodes::OK,
-                meta: new RedisMeta(
-                    connected: true,
-                    connection: $connectionName,
-                    client: (string) config('database.redis.client'),
-                    database: (int) config("database.redis.{$connectionName}.database", 0),
-                    keyCount: (int) $connection->dbsize(),
-                    responseTimeMs: $responseTimeMs,
-                    instanceMemoryUsedMb: $this->bytesToMb($info['used_memory'] ?? null),
-                    instanceMemoryMaxMb: $maxMemory !== null && $maxMemory > 0 ? $this->bytesToMb($maxMemory) : null,
-                ),
+                connected: true,
+                connection: $connectionName,
+                client: (string) config('database.redis.client'),
+                database: (int) config("database.redis.{$connectionName}.database", 0),
+                keyCount: (int) $connection->dbsize(),
+                responseTimeMs: $responseTimeMs,
+                instanceMemoryUsedMb: $this->bytesToMb($info['used_memory'] ?? null),
+                instanceMemoryMaxMb: $maxMemory !== null && $maxMemory > 0 ? $this->bytesToMb($maxMemory) : null,
             );
         } catch (Throwable $throwable) {
-            return new CheckResult(
-                type: CheckType::Redis,
+            return new RedisStatus(
                 status: StatusCodes::ERROR,
-                meta: new RedisMeta(
-                    connected: false,
-                    connection: $connectionName,
-                    client: (string) config('database.redis.client'),
-                    database: (int) config("database.redis.{$connectionName}.database", 0),
-                    keyCount: null,
-                    responseTimeMs: null,
-                    instanceMemoryUsedMb: null,
-                    instanceMemoryMaxMb: null,
-                    message: $throwable->getMessage(),
-                ),
+                connected: false,
+                connection: $connectionName,
+                client: (string) config('database.redis.client'),
+                database: (int) config("database.redis.{$connectionName}.database", 0),
+                keyCount: null,
+                responseTimeMs: null,
+                instanceMemoryUsedMb: null,
+                instanceMemoryMaxMb: null,
+                message: $throwable->getMessage(),
             );
         }
     }

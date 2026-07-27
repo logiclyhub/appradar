@@ -21,6 +21,24 @@ It also wires:
 - scheduler activity listeners
 - scheduler heartbeat registration
 
+## Shared Contract
+
+This package is both:
+
+- the agent that exposes the status endpoint inside supported apps
+- the shared contract/SDK that can parse those endpoint responses elsewhere
+
+Example:
+
+```php
+use AppRadar\Agent\Data\StatusReport;
+
+$report = StatusReport::fromArray($payload);
+
+$databaseStatus = $report->database;
+$allSections = $report->sections();
+```
+
 ## Install
 
 For local development through a path repository:

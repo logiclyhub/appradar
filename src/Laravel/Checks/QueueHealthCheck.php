@@ -5,12 +5,10 @@ namespace AppRadar\Agent\Laravel\Checks;
 use Illuminate\Contracts\Queue\Factory as QueueFactory;
 use Illuminate\Queue\RedisQueue;
 use Laravel\Horizon\Contracts\SupervisorRepository;
-use AppRadar\Agent\Core\CheckType;
 use AppRadar\Agent\Core\Contracts\StatusCheckInterface;
 use AppRadar\Agent\Core\StatusCodes;
-use AppRadar\Agent\Core\ValueObjects\CheckResult;
+use AppRadar\Agent\Data\QueueStatus;
 use AppRadar\Agent\Laravel\Support\QueueMetricsStore;
-use AppRadar\Agent\Laravel\ValueObjects\QueueMeta;
 use Throwable;
 
 class QueueHealthCheck implements StatusCheckInterface
@@ -27,7 +25,7 @@ class QueueHealthCheck implements StatusCheckInterface
     ) {
     }
 
-    public function run(): CheckResult
+    public function run(): QueueStatus
     {
         $connectionName = (string) config('queue.default');
         $driver = (string) config("queue.connections.{$connectionName}.driver", $connectionName);
@@ -50,8 +48,7 @@ class QueueHealthCheck implements StatusCheckInterface
             );
             $workerRunning = $activeWorkers > 0;
 
-            return new CheckResult(
-                type: CheckType::Queue,
+            return new QueueStatus(
                 status: $this->status(
                     driver: $driver,
                     workerRunning: $workerRunning,
@@ -61,40 +58,35 @@ class QueueHealthCheck implements StatusCheckInterface
                     processedRecently: $activity['processed_recently'],
                     failingJobsRecently: $activity['failing_jobs_recently'],
                 ),
-                meta: new QueueMeta(
-                    connected: true,
-                    connection: $connectionName,
-                    driver: $driver,
-                    queue: $queueName,
-                    activeWorkers: $activeWorkers,
-                    workerRunning: $workerRunning,
-                    pendingJobs: $pendingJobs,
-                    runningJobs: $runningJobs,
-                    staleWaitingJobsOver15Minutes: $staleWaitingJobs,
-                    stuckJobsOver1Hour: $stuckJobs,
-                    processedRecently: $activity['processed_recently'],
-                    failingJobsRecently: $activity['failing_jobs_recently'],
-                ),
+                connected: true,
+                connection: $connectionName,
+                driver: $driver,
+                queue: $queueName,
+                activeWorkers: $activeWorkers,
+                workerRunning: $workerRunning,
+                pendingJobs: $pendingJobs,
+                runningJobs: $runningJobs,
+                staleWaitingJobsOver15Minutes: $staleWaitingJobs,
+                stuckJobsOver1Hour: $stuckJobs,
+                processedRecently: $activity['processed_recently'],
+                failingJobsRecently: $activity['failing_jobs_recently'],
             );
         } catch (Throwable $throwable) {
-            return new CheckResult(
-                type: CheckType::Queue,
+            return new QueueStatus(
                 status: StatusCodes::ERROR,
-                meta: new QueueMeta(
-                    connected: false,
-                    connection: $connectionName,
-                    driver: $driver,
-                    queue: $queueName,
-                    activeWorkers: 0,
-                    workerRunning: false,
-                    pendingJobs: 0,
-                    runningJobs: 0,
-                    staleWaitingJobsOver15Minutes: 0,
-                    stuckJobsOver1Hour: 0,
-                    processedRecently: false,
-                    failingJobsRecently: false,
-                    message: $throwable->getMessage(),
-                ),
+                connected: false,
+                connection: $connectionName,
+                driver: $driver,
+                queue: $queueName,
+                activeWorkers: 0,
+                workerRunning: false,
+                pendingJobs: 0,
+                runningJobs: 0,
+                staleWaitingJobsOver15Minutes: 0,
+                stuckJobsOver1Hour: 0,
+                processedRecently: false,
+                failingJobsRecently: false,
+                message: $throwable->getMessage(),
             );
         }
     }

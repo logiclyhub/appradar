@@ -4,14 +4,12 @@ namespace AppRadar\Agent\Laravel\Checks;
 
 use Carbon\Carbon;
 use Illuminate\Console\Scheduling\Schedule;
-use AppRadar\Agent\Core\CheckType;
 use AppRadar\Agent\Core\Contracts\StatusCheckInterface;
 use AppRadar\Agent\Core\StatusCodes;
-use AppRadar\Agent\Core\ValueObjects\CheckResult;
+use AppRadar\Agent\Data\SchedulerStatus;
 use AppRadar\Agent\Laravel\Support\SchedulerMetricsStore;
 use AppRadar\Agent\Laravel\Support\SchedulerTaskDescriptor;
 use AppRadar\Agent\Laravel\Support\StatusFileStore;
-use AppRadar\Agent\Laravel\ValueObjects\SchedulerMeta;
 use Throwable;
 
 class SchedulerHeartbeatCheck implements StatusCheckInterface
@@ -25,7 +23,7 @@ class SchedulerHeartbeatCheck implements StatusCheckInterface
     ) {
     }
 
-    public function run(): CheckResult
+    public function run(): SchedulerStatus
     {
         $metrics = $this->metrics->snapshot();
         $registeredCrons = $this->registeredCronCount();
@@ -35,48 +33,8 @@ class SchedulerHeartbeatCheck implements StatusCheckInterface
             $lastHeartbeatAt = $payload['checked_at'] ?? null;
 
             if (!is_string($lastHeartbeatAt) || $lastHeartbeatAt === '') {
-                return new CheckResult(
-                    type: CheckType::Scheduler,
+                return new SchedulerStatus(
                     status: StatusCodes::ERROR,
-                    meta: new SchedulerMeta(
-                        running: false,
-                        lastHeartbeatAt: null,
-                        lastSuccessfulRunSecondsAgo: null,
-                        expectedIntervalSeconds: self::EXPECTED_INTERVAL_SECONDS,
-                        registeredCrons: $registeredCrons,
-                        failedCronsRecently: $metrics['failed_crons_recently'],
-                        successfulCronsRecently: $metrics['successful_crons_recently'],
-                        runningCrons: $metrics['running_crons'],
-                        slowCrons: $metrics['slow_crons'],
-                        message: 'Heartbeat file not found or invalid.',
-                    ),
-                );
-            }
-
-            $ageSeconds = now()->diffInSeconds(Carbon::parse($lastHeartbeatAt));
-            $running = $ageSeconds <= 300;
-            $status = $this->status($running, $ageSeconds, $metrics);
-
-            return new CheckResult(
-                type: CheckType::Scheduler,
-                status: $status,
-                meta: new SchedulerMeta(
-                    running: $running,
-                    lastHeartbeatAt: $lastHeartbeatAt,
-                    lastSuccessfulRunSecondsAgo: $ageSeconds,
-                    expectedIntervalSeconds: self::EXPECTED_INTERVAL_SECONDS,
-                    registeredCrons: $registeredCrons,
-                    failedCronsRecently: $metrics['failed_crons_recently'],
-                    successfulCronsRecently: $metrics['successful_crons_recently'],
-                    runningCrons: $metrics['running_crons'],
-                    slowCrons: $metrics['slow_crons'],
-                ),
-            );
-        } catch (Throwable $throwable) {
-            return new CheckResult(
-                type: CheckType::Scheduler,
-                status: StatusCodes::ERROR,
-                meta: new SchedulerMeta(
                     running: false,
                     lastHeartbeatAt: null,
                     lastSuccessfulRunSecondsAgo: null,
@@ -86,8 +44,39 @@ class SchedulerHeartbeatCheck implements StatusCheckInterface
                     successfulCronsRecently: $metrics['successful_crons_recently'],
                     runningCrons: $metrics['running_crons'],
                     slowCrons: $metrics['slow_crons'],
-                    message: $throwable->getMessage(),
-                ),
+                    message: 'Heartbeat file not found or invalid.',
+                );
+            }
+
+            $ageSeconds = now()->diffInSeconds(Carbon::parse($lastHeartbeatAt));
+            $running = $ageSeconds <= 300;
+            $status = $this->status($running, $ageSeconds, $metrics);
+
+            return new SchedulerStatus(
+                status: $status,
+                running: $running,
+                lastHeartbeatAt: Carbon::parse($lastHeartbeatAt)->toImmutable(),
+                lastSuccessfulRunSecondsAgo: $ageSeconds,
+                expectedIntervalSeconds: self::EXPECTED_INTERVAL_SECONDS,
+                registeredCrons: $registeredCrons,
+                failedCronsRecently: $metrics['failed_crons_recently'],
+                successfulCronsRecently: $metrics['successful_crons_recently'],
+                runningCrons: $metrics['running_crons'],
+                slowCrons: $metrics['slow_crons'],
+            );
+        } catch (Throwable $throwable) {
+            return new SchedulerStatus(
+                status: StatusCodes::ERROR,
+                running: false,
+                lastHeartbeatAt: null,
+                lastSuccessfulRunSecondsAgo: null,
+                expectedIntervalSeconds: self::EXPECTED_INTERVAL_SECONDS,
+                registeredCrons: $registeredCrons,
+                failedCronsRecently: $metrics['failed_crons_recently'],
+                successfulCronsRecently: $metrics['successful_crons_recently'],
+                runningCrons: $metrics['running_crons'],
+                slowCrons: $metrics['slow_crons'],
+                message: $throwable->getMessage(),
             );
         }
     }

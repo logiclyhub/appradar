@@ -2,13 +2,11 @@
 
 namespace AppRadar\Agent\Laravel\Checks;
 
-use AppRadar\Agent\Core\CheckType;
 use AppRadar\Agent\Core\Contracts\StatusCheckInterface;
 use AppRadar\Agent\Core\StatusCodes;
-use AppRadar\Agent\Core\ValueObjects\CheckResult;
+use AppRadar\Agent\Data\TestsStatus;
 use AppRadar\Agent\Laravel\Support\StatusFileStore;
 use AppRadar\Agent\Laravel\Support\TestRunner;
-use AppRadar\Agent\Laravel\ValueObjects\TestsMeta;
 use Throwable;
 
 class TestsCheck implements StatusCheckInterface
@@ -19,59 +17,49 @@ class TestsCheck implements StatusCheckInterface
     ) {
     }
 
-    public function run(): CheckResult
+    public function run(): TestsStatus
     {
         $coverageAvailable = $this->runner->coverageDriver() !== null;
 
         if (!$this->store->exists('test-run.json')) {
-            return new CheckResult(
-                type: CheckType::Tests,
+            return new TestsStatus(
                 status: StatusCodes::WARN,
-                meta: new TestsMeta(
-                    hasRun: false,
-                    lastRunAt: null,
-                    success: null,
-                    exitCode: null,
-                    durationSeconds: null,
-                    tests: null,
-                    assertions: null,
-                    failures: null,
-                    errors: null,
-                    skipped: null,
-                    coverageAvailable: $coverageAvailable,
-                    coveragePercent: null,
-                ),
+                hasRun: false,
+                lastRunAt: null,
+                success: null,
+                exitCode: null,
+                durationSeconds: null,
+                tests: null,
+                assertions: null,
+                failures: null,
+                errors: null,
+                skipped: null,
+                coverageAvailable: $coverageAvailable,
+                coveragePercent: null,
             );
         }
 
         try {
             $payload = $this->store->readJson('test-run.json') ?? [];
-            $meta = $this->metaFromPayload($payload, $coverageAvailable);
+            $testsStatus = $this->testsStatusFromPayload($payload, $coverageAvailable);
 
-            return new CheckResult(
-                type: CheckType::Tests,
-                status: $this->statusFromPayload($payload),
-                meta: $meta,
-            );
+            return $testsStatus;
         } catch (Throwable $throwable) {
-            return new CheckResult(
-                type: CheckType::Tests,
+            return new TestsStatus(
                 status: StatusCodes::ERROR,
-                meta: new TestsMeta(
-                    hasRun: false,
-                    lastRunAt: null,
-                    success: null,
-                    exitCode: null,
-                    durationSeconds: null,
-                    tests: null,
-                    assertions: null,
-                    failures: null,
-                    errors: null,
-                    skipped: null,
-                    coverageAvailable: $coverageAvailable,
-                    coveragePercent: null,
-                    message: $throwable->getMessage(),
-                ),
+                hasRun: false,
+                lastRunAt: null,
+                success: null,
+                exitCode: null,
+                durationSeconds: null,
+                tests: null,
+                assertions: null,
+                failures: null,
+                errors: null,
+                skipped: null,
+                coverageAvailable: $coverageAvailable,
+                coveragePercent: null,
+                message: $throwable->getMessage(),
             );
         }
     }
@@ -79,29 +67,24 @@ class TestsCheck implements StatusCheckInterface
     /**
      * @param  array<string, mixed>  $payload
      */
-    public function metaFromPayload(array $payload, bool $coverageAvailable): TestsMeta
+    public function testsStatusFromPayload(array $payload, bool $coverageAvailable): TestsStatus
     {
-        $summary = is_array($payload['summary'] ?? null) ? $payload['summary'] : [];
-        $coverage = is_array($payload['coverage'] ?? null) ? $payload['coverage'] : [];
-
-        return new TestsMeta(
-            hasRun: true,
-            lastRunAt: is_string($payload['last_run_at'] ?? null)
-                ? $payload['last_run_at']
-                : (is_string($payload['ran_at'] ?? null) ? $payload['ran_at'] : null),
-            success: isset($payload['success']) ? (bool) $payload['success'] : null,
-            exitCode: isset($payload['exit_code']) ? (int) $payload['exit_code'] : null,
-            durationSeconds: isset($payload['duration_seconds']) ? (float) $payload['duration_seconds'] : null,
-            tests: isset($payload['tests']) ? (int) $payload['tests'] : (isset($summary['tests']) ? (int) $summary['tests'] : null),
-            assertions: isset($payload['assertions']) ? (int) $payload['assertions'] : (isset($summary['assertions']) ? (int) $summary['assertions'] : null),
-            failures: isset($payload['failures']) ? (int) $payload['failures'] : (isset($summary['failures']) ? (int) $summary['failures'] : null),
-            errors: isset($payload['errors']) ? (int) $payload['errors'] : (isset($summary['errors']) ? (int) $summary['errors'] : null),
-            skipped: isset($payload['skipped']) ? (int) $payload['skipped'] : (isset($summary['skipped']) ? (int) $summary['skipped'] : null),
-            coverageAvailable: $coverageAvailable,
-            coveragePercent: isset($payload['coverage_percent'])
-                ? (float) $payload['coverage_percent']
-                : (isset($coverage['line_coverage_percent']) ? (float) $coverage['line_coverage_percent'] : null),
-        );
+        return TestsStatus::fromArray([
+            'status' => $this->statusFromPayload($payload),
+            'has_run' => true,
+            'last_run_at' => $payload['last_run_at'] ?? $payload['ran_at'] ?? null,
+            'success' => $payload['success'] ?? null,
+            'exit_code' => $payload['exit_code'] ?? null,
+            'duration_seconds' => $payload['duration_seconds'] ?? null,
+            'tests' => $payload['tests'] ?? $payload['summary']['tests'] ?? null,
+            'assertions' => $payload['assertions'] ?? $payload['summary']['assertions'] ?? null,
+            'failures' => $payload['failures'] ?? $payload['summary']['failures'] ?? null,
+            'errors' => $payload['errors'] ?? $payload['summary']['errors'] ?? null,
+            'skipped' => $payload['skipped'] ?? $payload['summary']['skipped'] ?? null,
+            'coverage_available' => $coverageAvailable,
+            'coverage_percent' => $payload['coverage_percent'] ?? $payload['coverage']['line_coverage_percent'] ?? null,
+            'message' => $payload['message'] ?? null,
+        ]);
     }
 
     /**

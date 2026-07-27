@@ -3,11 +3,9 @@
 namespace AppRadar\Agent\Laravel\Checks;
 
 use Illuminate\Database\DatabaseManager;
-use AppRadar\Agent\Core\CheckType;
 use AppRadar\Agent\Core\Contracts\StatusCheckInterface;
 use AppRadar\Agent\Core\StatusCodes;
-use AppRadar\Agent\Core\ValueObjects\CheckResult;
-use AppRadar\Agent\Laravel\ValueObjects\DatabaseMeta;
+use AppRadar\Agent\Data\DatabaseStatus;
 use Throwable;
 
 class DatabaseCheck implements StatusCheckInterface
@@ -17,7 +15,7 @@ class DatabaseCheck implements StatusCheckInterface
     ) {
     }
 
-    public function run(): CheckResult
+    public function run(): DatabaseStatus
     {
         try {
             $connection = $this->database->connection();
@@ -27,31 +25,25 @@ class DatabaseCheck implements StatusCheckInterface
             $driver = $connection->getDriverName();
             $version = $this->serverVersion($connection);
 
-            return new CheckResult(
-                type: CheckType::Database,
+            return new DatabaseStatus(
                 status: $responseTimeMs > 1000 ? StatusCodes::WARN : StatusCodes::OK,
-                meta: new DatabaseMeta(
-                    connected: true,
-                    connection: $connection->getName(),
-                    type: $this->databaseType($driver, $version),
-                    database: $connection->getDatabaseName(),
-                    sizeMb: $this->databaseSizeMb($driver, $connection->getDatabaseName()),
-                    responseTimeMs: $responseTimeMs,
-                ),
+                connected: true,
+                connection: $connection->getName(),
+                type: $this->databaseType($driver, $version),
+                database: $connection->getDatabaseName(),
+                sizeMb: $this->databaseSizeMb($driver, $connection->getDatabaseName()),
+                responseTimeMs: $responseTimeMs,
             );
         } catch (Throwable $throwable) {
-            return new CheckResult(
-                type: CheckType::Database,
+            return new DatabaseStatus(
                 status: StatusCodes::ERROR,
-                meta: new DatabaseMeta(
-                    connected: false,
-                    connection: config('database.default'),
-                    type: null,
-                    database: (string) config('database.connections.'.config('database.default').'.database'),
-                    sizeMb: null,
-                    responseTimeMs: null,
-                    message: $throwable->getMessage(),
-                ),
+                connected: false,
+                connection: config('database.default'),
+                type: null,
+                database: (string) config('database.connections.'.config('database.default').'.database'),
+                sizeMb: null,
+                responseTimeMs: null,
+                message: $throwable->getMessage(),
             );
         }
     }
