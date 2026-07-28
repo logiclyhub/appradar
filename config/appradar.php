@@ -18,7 +18,7 @@ return [
 
     'queue' => [
         'activity_window_seconds' => 900,
-        'problem_window_seconds' => 3600,
+        'problem_window_seconds' => 21600,
         'problem_threshold' => 3,
         'timeout_threshold' => 2,
         'max_problem_jobs' => 5,

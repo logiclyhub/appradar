@@ -51,13 +51,13 @@ class QueueHealthCheck implements StatusCheckInterface
                 connection: $connectionName,
                 queue: $queueName,
                 activityWindowSeconds: (int) config('appradar.queue.activity_window_seconds', 900),
-                problemWindowSeconds: (int) config('appradar.queue.problem_window_seconds', 3600),
+                problemWindowSeconds: (int) config('appradar.queue.problem_window_seconds', 21600),
                 defaultProcessedRecently: $pendingJobs === 0 && $runningJobs === 0,
             );
             $failedJobs = $this->failedJobSnapshot(
                 connectionName: $connectionName,
                 queueName: $queueName,
-                problemWindowSeconds: (int) config('appradar.queue.problem_window_seconds', 3600),
+                problemWindowSeconds: (int) config('appradar.queue.problem_window_seconds', 21600),
                 maxProblemJobs: (int) config('appradar.queue.max_problem_jobs', 5),
             );
             $problemSummary = $this->mergeProblemSignals($activity, $failedJobs);
