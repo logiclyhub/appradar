@@ -4,6 +4,7 @@ namespace AppRadar\Agent\Laravel\Checks;
 
 use AppRadar\Agent\Core\Contracts\StatusCheckInterface;
 use AppRadar\Agent\Core\StatusCodes;
+use AppRadar\Agent\Data\QueueProblemJob;
 use AppRadar\Agent\Data\QueueStatus;
 use AppRadar\Agent\Laravel\Support\QueueMetricsStore;
 use Illuminate\Contracts\Queue\Factory as QueueFactory;
@@ -17,8 +18,6 @@ class QueueHealthCheck implements StatusCheckInterface
     private const STALE_WAITING_THRESHOLD_SECONDS = 900;
 
     private const STUCK_RUNNING_THRESHOLD_SECONDS = 3600;
-
-    private const ACTIVITY_WINDOW_SECONDS = 900;
 
     public function __construct(
         private readonly QueueFactory $queue,
@@ -49,7 +48,8 @@ class QueueHealthCheck implements StatusCheckInterface
             $activity = $this->metrics->snapshot(
                 connection: $connectionName,
                 queue: $queueName,
-                recentWindowSeconds: self::ACTIVITY_WINDOW_SECONDS,
+                activityWindowSeconds: (int) config('appradar.queue.activity_window_seconds', 900),
+                problemWindowSeconds: (int) config('appradar.queue.problem_window_seconds', 3600),
                 defaultProcessedRecently: $pendingJobs === 0 && $runningJobs === 0,
             );
             $workerRunning = $activeWorkers > 0 || $activity['processed_recently'];
@@ -63,6 +63,8 @@ class QueueHealthCheck implements StatusCheckInterface
                     stuckJobs: $stuckJobs,
                     processedRecently: $activity['processed_recently'],
                     failingJobsRecently: $activity['failing_jobs_recently'],
+                    timeoutOccurrencesRecently: $activity['timeout_occurrences_recently'],
+                    problemJobsCount: $activity['problem_jobs_count'],
                 ),
                 connected: true,
                 connection: $connectionName,
@@ -79,13 +81,21 @@ class QueueHealthCheck implements StatusCheckInterface
                 stuckJobsOver1Hour: $stuckJobs,
                 processedRecently: $activity['processed_recently'],
                 failingJobsRecently: $activity['failing_jobs_recently'],
+                exceptionOccurrencesRecently: $activity['exception_occurrences_recently'],
+                timeoutOccurrencesRecently: $activity['timeout_occurrences_recently'],
+                problemJobsCount: $activity['problem_jobs_count'],
+                problemJobs: collect($activity['problem_jobs'] ?? [])
+                    ->filter(fn (mixed $job): bool => is_array($job))
+                    ->map(fn (array $job): QueueProblemJob => QueueProblemJob::fromArray($job))
+                    ->values()
+                    ->all(),
                 workerTimeoutSeconds: $workerInspection['options']['timeout'] ?? null,
                 workerSleepSeconds: $workerInspection['options']['sleep'] ?? null,
                 workerTries: $workerInspection['options']['tries'] ?? null,
                 workerMemoryMb: $workerInspection['options']['memory'] ?? null,
                 workerBackoffSeconds: $workerInspection['options']['backoff'] ?? null,
                 workerMaxTimeSeconds: $workerInspection['options']['max_time'] ?? null,
-                workerCommand: $workerInspection['command'],
+                workerCommand: null,
             );
         } catch (Throwable $throwable) {
             return new QueueStatus(
@@ -105,6 +115,10 @@ class QueueHealthCheck implements StatusCheckInterface
                 stuckJobsOver1Hour: 0,
                 processedRecently: false,
                 failingJobsRecently: false,
+                exceptionOccurrencesRecently: 0,
+                timeoutOccurrencesRecently: 0,
+                problemJobsCount: 0,
+                problemJobs: [],
                 workerTimeoutSeconds: null,
                 workerSleepSeconds: null,
                 workerTries: null,
@@ -339,7 +353,17 @@ class QueueHealthCheck implements StatusCheckInterface
         return $options;
     }
 
-    private function status(string $driver, bool $workerRunning, int $pendingJobs, int $staleWaitingJobs, int $stuckJobs, bool $processedRecently, bool $failingJobsRecently): int
+    private function status(
+        string $driver,
+        bool $workerRunning,
+        int $pendingJobs,
+        int $staleWaitingJobs,
+        int $stuckJobs,
+        bool $processedRecently,
+        bool $failingJobsRecently,
+        int $timeoutOccurrencesRecently,
+        int $problemJobsCount,
+    ): int
     {
         if ($driver === 'sync') {
             return StatusCodes::WARN;
@@ -357,8 +381,16 @@ class QueueHealthCheck implements StatusCheckInterface
             return StatusCodes::ERROR;
         }
 
-        if ($failingJobsRecently) {
+        if ($problemJobsCount > 0) {
             return StatusCodes::ERROR;
+        }
+
+        if ($timeoutOccurrencesRecently > 0) {
+            return StatusCodes::WARN;
+        }
+
+        if ($failingJobsRecently) {
+            return StatusCodes::WARN;
         }
 
         if ($staleWaitingJobs > 0) {

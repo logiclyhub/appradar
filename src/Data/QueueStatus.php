@@ -26,6 +26,11 @@ class QueueStatus implements StatusSectionInterface
         public readonly int $stuckJobsOver1Hour,
         public readonly bool $processedRecently,
         public readonly bool $failingJobsRecently,
+        public readonly int $exceptionOccurrencesRecently,
+        public readonly int $timeoutOccurrencesRecently,
+        public readonly int $problemJobsCount,
+        /** @var array<int, QueueProblemJob> */
+        public readonly array $problemJobs,
         public readonly ?int $workerTimeoutSeconds,
         public readonly ?int $workerSleepSeconds,
         public readonly ?int $workerTries,
@@ -74,6 +79,14 @@ class QueueStatus implements StatusSectionInterface
             stuckJobsOver1Hour: self::intValue($payload, 'stuck_jobs_over_1_hour', 0),
             processedRecently: self::boolValue($payload, 'processed_recently'),
             failingJobsRecently: self::boolValue($payload, 'failing_jobs_recently'),
+            exceptionOccurrencesRecently: self::intValue($payload, 'exception_occurrences_recently', 0),
+            timeoutOccurrencesRecently: self::intValue($payload, 'timeout_occurrences_recently', 0),
+            problemJobsCount: self::intValue($payload, 'problem_jobs_count', 0),
+            problemJobs: collect($payload['problem_jobs'] ?? [])
+                ->filter(fn (mixed $job): bool => is_array($job))
+                ->map(fn (array $job): QueueProblemJob => QueueProblemJob::fromArray($job))
+                ->values()
+                ->all(),
             workerTimeoutSeconds: self::nullableIntValue($payload, 'worker_timeout_seconds'),
             workerSleepSeconds: self::nullableIntValue($payload, 'worker_sleep_seconds'),
             workerTries: self::nullableIntValue($payload, 'worker_tries'),
@@ -107,6 +120,13 @@ class QueueStatus implements StatusSectionInterface
             'stuck_jobs_over_1_hour' => $this->stuckJobsOver1Hour,
             'processed_recently' => $this->processedRecently,
             'failing_jobs_recently' => $this->failingJobsRecently,
+            'exception_occurrences_recently' => $this->exceptionOccurrencesRecently,
+            'timeout_occurrences_recently' => $this->timeoutOccurrencesRecently,
+            'problem_jobs_count' => $this->problemJobsCount,
+            'problem_jobs' => array_map(
+                static fn (QueueProblemJob $job): array => $job->toArray(),
+                $this->problemJobs,
+            ),
             'worker_timeout_seconds' => $this->workerTimeoutSeconds,
             'worker_sleep_seconds' => $this->workerSleepSeconds,
             'worker_tries' => $this->workerTries,

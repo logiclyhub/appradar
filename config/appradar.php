@@ -15,4 +15,13 @@ return [
     'scheduler' => [
         'heartbeat_name' => 'appradar-heartbeat',
     ],
+
+    'queue' => [
+        'activity_window_seconds' => 900,
+        'problem_window_seconds' => 3600,
+        'problem_threshold' => 3,
+        'timeout_threshold' => 2,
+        'max_problem_jobs' => 5,
+        'incident_retention_hours' => 24,
+    ],
 ];
