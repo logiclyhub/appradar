@@ -18,6 +18,7 @@ class QueueMetricsStore
     {
         $this->update($connection, $queue, function (array $metrics): array {
             $metrics['last_processed_at'] = now()->toIso8601String();
+            $metrics['processed_events'] = $this->appendEvent($metrics['processed_events'] ?? []);
 
             return $metrics;
         });
@@ -27,6 +28,7 @@ class QueueMetricsStore
     {
         $this->update($connection, $queue, function (array $metrics): array {
             $metrics['last_failed_at'] = now()->toIso8601String();
+            $metrics['failed_events'] = $this->appendEvent($metrics['failed_events'] ?? []);
 
             return $metrics;
         });
@@ -83,6 +85,8 @@ class QueueMetricsStore
      * @return array{
      *     processed_recently:bool,
      *     failing_jobs_recently:bool,
+     *     completed_jobs_recently_count:int,
+     *     failed_jobs_recently_count:int,
      *     exception_occurrences_recently:int,
      *     timeout_occurrences_recently:int,
      *     problem_jobs_count:int,
@@ -104,6 +108,13 @@ class QueueMetricsStore
         $problemThreshold = (int) config('appradar.queue.problem_threshold', 3);
         $timeoutThreshold = (int) config('appradar.queue.timeout_threshold', 2);
         $maxProblemJobs = (int) config('appradar.queue.max_problem_jobs', 5);
+
+        $processedEvents = collect(is_array($metrics['processed_events'] ?? null) ? $metrics['processed_events'] : [])
+            ->filter(fn (mixed $timestamp): bool => is_string($timestamp) && $this->isAfter($timestamp, $activityCutoff))
+            ->values();
+        $failedEvents = collect(is_array($metrics['failed_events'] ?? null) ? $metrics['failed_events'] : [])
+            ->filter(fn (mixed $timestamp): bool => is_string($timestamp) && $this->isAfter($timestamp, $activityCutoff))
+            ->values();
 
         $jobSummaries = collect(is_array($metrics['jobs'] ?? null) ? $metrics['jobs'] : [])
             ->filter(fn (mixed $job): bool => is_array($job))
@@ -151,6 +162,8 @@ class QueueMetricsStore
         return [
             'processed_recently' => $defaultProcessedRecently || $this->isAfter($metrics['last_processed_at'] ?? null, $activityCutoff),
             'failing_jobs_recently' => $this->isAfter($metrics['last_failed_at'] ?? null, $activityCutoff),
+            'completed_jobs_recently_count' => $processedEvents->count(),
+            'failed_jobs_recently_count' => $failedEvents->count(),
             'exception_occurrences_recently' => $jobSummaries->sum('occurrences'),
             'timeout_occurrences_recently' => $jobSummaries->sum('timeout_occurrences'),
             'problem_jobs_count' => $problemJobs->count(),
@@ -170,6 +183,8 @@ class QueueMetricsStore
             $queues = is_array($payload['queues'] ?? null) ? $payload['queues'] : [];
             $current = is_array($queues[$key] ?? null) ? $queues[$key] : [];
             $updated = $updater($current);
+            $updated['processed_events'] = $this->pruneTimestamps($updated['processed_events'] ?? [], $retentionCutoff);
+            $updated['failed_events'] = $this->pruneTimestamps($updated['failed_events'] ?? [], $retentionCutoff);
             $updated['jobs'] = $this->pruneJobs($updated['jobs'] ?? [], $retentionCutoff);
             $queues[$key] = $updated;
 
@@ -185,6 +200,22 @@ class QueueMetricsStore
     private function jobKey(string $jobName): string
     {
         return sha1($jobName);
+    }
+
+    /**
+     * @param  mixed  $timestamps
+     * @return array<int, string>
+     */
+    private function appendEvent(mixed $timestamps): array
+    {
+        $items = collect(is_array($timestamps) ? $timestamps : [])
+            ->filter(fn (mixed $timestamp): bool => is_string($timestamp))
+            ->take(-99)
+            ->values();
+
+        $items->push(now()->toIso8601String());
+
+        return $items->all();
     }
 
     /**
@@ -218,6 +249,19 @@ class QueueMetricsStore
                 ];
             })
             ->filter()
+            ->all();
+    }
+
+    /**
+     * @param  mixed  $timestamps
+     * @return array<int, string>
+     */
+    private function pruneTimestamps(mixed $timestamps, Carbon $cutoff): array
+    {
+        return collect(is_array($timestamps) ? $timestamps : [])
+            ->filter(fn (mixed $timestamp): bool => is_string($timestamp) && $this->isAfter($timestamp, $cutoff))
+            ->take(-100)
+            ->values()
             ->all();
     }
 

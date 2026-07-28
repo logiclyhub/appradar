@@ -9,8 +9,10 @@ use AppRadar\Agent\Data\QueueStatus;
 use AppRadar\Agent\Laravel\Support\QueueMetricsStore;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Redis;
 use Illuminate\Contracts\Queue\Factory as QueueFactory;
 use Illuminate\Queue\RedisQueue;
+use Laravel\Horizon\Contracts\JobRepository;
 use Laravel\Horizon\Contracts\SupervisorRepository;
 use Symfony\Component\Process\Process;
 use Throwable;
@@ -54,14 +56,29 @@ class QueueHealthCheck implements StatusCheckInterface
                 problemWindowSeconds: (int) config('appradar.queue.problem_window_seconds', 21600),
                 defaultProcessedRecently: $pendingJobs === 0 && $runningJobs === 0,
             );
+            $horizonWindow = $this->horizonWindowSnapshot(
+                connectionName: $connectionName,
+                queueName: $queueName,
+                activityWindowSeconds: (int) config('appradar.queue.activity_window_seconds', 900),
+            );
             $failedJobs = $this->failedJobSnapshot(
                 connectionName: $connectionName,
                 queueName: $queueName,
+                activityWindowSeconds: (int) config('appradar.queue.activity_window_seconds', 900),
                 problemWindowSeconds: (int) config('appradar.queue.problem_window_seconds', 21600),
                 maxProblemJobs: (int) config('appradar.queue.max_problem_jobs', 5),
             );
             $problemSummary = $this->mergeProblemSignals($activity, $failedJobs);
             $workerRunning = $activeWorkers > 0 || $activity['processed_recently'];
+            $completedJobsRecentlyCount = max(
+                (int) ($activity['completed_jobs_recently_count'] ?? 0),
+                (int) ($horizonWindow['completed_jobs_recently_count'] ?? 0),
+            );
+            $failedJobsRecentlyCount = max(
+                (int) ($activity['failed_jobs_recently_count'] ?? 0),
+                (int) ($horizonWindow['failed_jobs_recently_count'] ?? 0),
+                (int) ($failedJobs['failed_jobs_recently_count'] ?? 0),
+            );
 
             return new QueueStatus(
                 status: $this->status(
@@ -90,6 +107,8 @@ class QueueHealthCheck implements StatusCheckInterface
                 stuckJobsOver1Hour: $stuckJobs,
                 processedRecently: $activity['processed_recently'],
                 failingJobsRecently: $activity['failing_jobs_recently'] || $failedJobs['failed_jobs_recently'],
+                completedJobsRecentlyCount: $completedJobsRecentlyCount,
+                failedJobsRecentlyCount: $failedJobsRecentlyCount,
                 exceptionOccurrencesRecently: $problemSummary['exception_occurrences_recently'],
                 timeoutOccurrencesRecently: $problemSummary['timeout_occurrences_recently'],
                 problemJobsCount: $problemSummary['problem_jobs_count'],
@@ -124,6 +143,8 @@ class QueueHealthCheck implements StatusCheckInterface
                 stuckJobsOver1Hour: 0,
                 processedRecently: false,
                 failingJobsRecently: false,
+                completedJobsRecentlyCount: 0,
+                failedJobsRecentlyCount: 0,
                 exceptionOccurrencesRecently: 0,
                 timeoutOccurrencesRecently: 0,
                 problemJobsCount: 0,
@@ -477,7 +498,13 @@ class QueueHealthCheck implements StatusCheckInterface
      *     problem_jobs:array<int, array<string, mixed>>
      * }
      */
-    private function failedJobSnapshot(string $connectionName, string $queueName, int $problemWindowSeconds, int $maxProblemJobs): array
+    private function failedJobSnapshot(
+        string $connectionName,
+        string $queueName,
+        int $activityWindowSeconds,
+        int $problemWindowSeconds,
+        int $maxProblemJobs,
+    ): array
     {
         $failedDriver = (string) config('queue.failed.driver', '');
 
@@ -487,6 +514,7 @@ class QueueHealthCheck implements StatusCheckInterface
 
         $database = (string) config('queue.failed.database', config('database.default'));
         $table = (string) config('queue.failed.table', 'failed_jobs');
+        $activityCutoff = now()->subSeconds($activityWindowSeconds);
         $cutoff = now()->subSeconds($problemWindowSeconds);
 
         try {
@@ -535,6 +563,9 @@ class QueueHealthCheck implements StatusCheckInterface
 
         return [
             'failed_jobs_recently' => true,
+            'failed_jobs_recently_count' => $rows->filter(
+                fn (object $row): bool => isset($row->failed_at) && CarbonImmutable::parse((string) $row->failed_at)->greaterThanOrEqualTo($activityCutoff)
+            )->count(),
             'exception_occurrences_recently' => $jobs->sum('occurrences'),
             'timeout_occurrences_recently' => $jobs->sum('timeout_occurrences'),
             'problem_jobs_count' => $jobs->count(),
@@ -543,9 +574,70 @@ class QueueHealthCheck implements StatusCheckInterface
     }
 
     /**
+     * @return array{completed_jobs_recently_count:int,failed_jobs_recently_count:int}
+     */
+    private function horizonWindowSnapshot(string $connectionName, string $queueName, int $activityWindowSeconds): array
+    {
+        if (!class_exists(JobRepository::class) || !app()->bound(JobRepository::class)) {
+            return [
+                'completed_jobs_recently_count' => 0,
+                'failed_jobs_recently_count' => 0,
+            ];
+        }
+
+        try {
+            $redis = Redis::connection('horizon');
+            $cutoff = microtime(true) - $activityWindowSeconds;
+            $minScore = (string) (-1 * microtime(true));
+            $maxScore = (string) (-1 * $cutoff);
+
+            $completedIds = $redis->zrangebyscore('completed_jobs', $maxScore, $minScore);
+            $failedIds = $redis->zrangebyscore('recent_failed_jobs', $maxScore, $minScore);
+
+            return [
+                'completed_jobs_recently_count' => $this->countHorizonJobsForQueue($redis, $completedIds, $connectionName, $queueName),
+                'failed_jobs_recently_count' => $this->countHorizonJobsForQueue($redis, $failedIds, $connectionName, $queueName),
+            ];
+        } catch (Throwable) {
+            return [
+                'completed_jobs_recently_count' => 0,
+                'failed_jobs_recently_count' => 0,
+            ];
+        }
+    }
+
+    /**
+     * @param  array<int, mixed>  $ids
+     */
+    private function countHorizonJobsForQueue(object $redis, array $ids, string $connectionName, string $queueName): int
+    {
+        if ($ids === []) {
+            return 0;
+        }
+
+        $jobs = $redis->pipeline(function ($pipe) use ($ids): void {
+            foreach ($ids as $id) {
+                $pipe->hmget((string) $id, ['connection', 'queue']);
+            }
+        });
+
+        return collect(is_array($jobs) ? $jobs : [])
+            ->filter(function (mixed $job) use ($connectionName, $queueName): bool {
+                $values = is_array($job) ? array_values($job) : null;
+
+                return is_array($values)
+                    && ($values[0] ?? null) === $connectionName
+                    && ($values[1] ?? null) === $queueName;
+            })
+            ->count();
+    }
+
+    /**
      * @param  array{
      *     processed_recently:bool,
      *     failing_jobs_recently:bool,
+     *     completed_jobs_recently_count:int,
+     *     failed_jobs_recently_count:int,
      *     exception_occurrences_recently:int,
      *     timeout_occurrences_recently:int,
      *     problem_jobs_count:int,
@@ -700,6 +792,7 @@ class QueueHealthCheck implements StatusCheckInterface
     {
         return [
             'failed_jobs_recently' => false,
+            'failed_jobs_recently_count' => 0,
             'exception_occurrences_recently' => 0,
             'timeout_occurrences_recently' => 0,
             'problem_jobs_count' => 0,
