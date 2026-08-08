@@ -17,16 +17,16 @@ final class StatusEndpointExposureProbe implements SecurityProbeInterface
 
     public function probe(): SecurityIssueCollection
     {
-        if ($this->context->onlyLocalStatus) {
+        if ($this->context->statusTokenConfigured) {
             return SecurityIssueCollection::empty();
         }
 
         return SecurityIssueCollection::of(new SecurityIssue(
-            id: 'status_endpoint_public',
-            severity: StatusCodes::WARN,
-            title: 'Status endpoint not local-only',
-            message: 'only_local is false, so the status endpoint may be reachable broadly.',
-            remediation: 'Set only_local=true and/or protect the endpoint with APPRADAR_STATUS_TOKEN.',
+            id: 'status_endpoint_unprotected',
+            severity: StatusCodes::ERROR,
+            title: 'Status endpoint unprotected',
+            message: 'APPRADAR_STATUS_TOKEN is empty, so the status endpoint is publicly readable without authentication.',
+            remediation: 'Set APPRADAR_STATUS_TOKEN and send it as Authorization: Bearer <token> (or X-AppRadar-Token).',
         ));
     }
 }

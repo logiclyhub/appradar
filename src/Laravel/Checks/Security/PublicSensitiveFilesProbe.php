@@ -40,16 +40,6 @@ final class PublicSensitiveFilesProbe implements SecurityProbeInterface
             )));
         }
 
-        if (is_dir($public.DIRECTORY_SEPARATOR.'vendor')) {
-            $issues = $issues->merge(SecurityIssueCollection::of(new SecurityIssue(
-                id: 'vendor_web_accessible_hint',
-                severity: StatusCodes::WARN,
-                title: 'vendor directory in public',
-                message: 'public/vendor exists. Confirm this is only published assets, not Composer vendor.',
-                remediation: 'Do not expose Composer vendor/ via the web server.',
-            )));
-        }
-
         return $issues;
     }
 }
