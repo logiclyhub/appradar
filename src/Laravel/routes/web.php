@@ -2,8 +2,14 @@
 
 use Illuminate\Support\Facades\Route;
 use AppRadar\Agent\Laravel\Http\Controllers\LocalStatusController;
+use AppRadar\Agent\Laravel\Http\Middleware\EnsureAppRadarStatusToken;
 
-Route::middleware((array) config('appradar.route.middleware', ['web']))->group(function (): void {
+$middleware = array_values(array_filter([
+    ...((array) config('appradar.route.middleware', ['web'])),
+    EnsureAppRadarStatusToken::class,
+]));
+
+Route::middleware($middleware)->group(function (): void {
     $path = trim((string) config('appradar.route.path', 'local/status'), '/');
 
     Route::get('/'.$path, LocalStatusController::class)

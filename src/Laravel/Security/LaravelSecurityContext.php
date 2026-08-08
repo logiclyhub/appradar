@@ -1,0 +1,80 @@
+<?php
+
+namespace AppRadar\Agent\Laravel\Security;
+
+final class LaravelSecurityContext
+{
+    public function __construct(
+        public readonly string $environment,
+        public readonly bool $debug,
+        public readonly ?string $appKey,
+        public readonly bool $sessionSecure,
+        public readonly bool $sessionHttpOnly,
+        public readonly ?string $sessionSameSite,
+        public readonly bool $displayErrors,
+        public readonly string $phpVersion,
+        public readonly string $publicPath,
+        public readonly bool $onlyLocalStatus,
+        public readonly bool $databasePasswordEmpty,
+        public readonly bool $redisConfigured,
+        public readonly bool $redisPasswordEmpty,
+        public readonly bool $telescopeEnabled,
+        public readonly bool $composerAuditEnabled,
+        public readonly ?string $publicUrl,
+        public readonly bool $sslCheckEnabled,
+        public readonly int $sslExpiryWarnDays,
+        public readonly float $sslTimeoutSeconds,
+        public readonly string $phpUnsupportedBelow,
+        public readonly string $phpEolBelow,
+        public readonly string $basePath,
+    ) {
+    }
+
+    public function isLocal(): bool
+    {
+        return in_array(strtolower($this->environment), ['local', 'testing'], true);
+    }
+
+    public static function fromLaravel(): self
+    {
+        $defaultRedis = (string) config('database.redis.default.host', '');
+        $redisPassword = config('database.redis.default.password');
+
+        return new self(
+            environment: (string) app()->environment(),
+            debug: (bool) config('app.debug'),
+            appKey: is_string(config('app.key')) ? config('app.key') : null,
+            sessionSecure: (bool) config('session.secure'),
+            sessionHttpOnly: (bool) config('session.http_only', true),
+            sessionSameSite: is_string(config('session.same_site')) ? config('session.same_site') : null,
+            displayErrors: filter_var(ini_get('display_errors'), FILTER_VALIDATE_BOOLEAN),
+            phpVersion: PHP_VERSION,
+            publicPath: public_path(),
+            onlyLocalStatus: (bool) config('appradar.only_local', false),
+            databasePasswordEmpty: trim((string) config('database.connections.'.config('database.default').'.password', '')) === '',
+            redisConfigured: $defaultRedis !== '',
+            redisPasswordEmpty: $redisPassword === null || $redisPassword === '',
+            telescopeEnabled: (bool) config('telescope.enabled', false),
+            composerAuditEnabled: (bool) config('appradar.security.composer_audit', false),
+            publicUrl: self::resolvePublicUrl(),
+            sslCheckEnabled: (bool) config('appradar.security.ssl_check', true),
+            sslExpiryWarnDays: (int) config('appradar.security.ssl_expiry_warn_days', 14),
+            sslTimeoutSeconds: (float) config('appradar.security.ssl_timeout_seconds', 3.0),
+            phpUnsupportedBelow: (string) config('appradar.security.php_unsupported_below', '8.2.0'),
+            phpEolBelow: (string) config('appradar.security.php_eol_below', '8.1.0'),
+            basePath: base_path(),
+        );
+    }
+
+    private static function resolvePublicUrl(): ?string
+    {
+        $override = config('appradar.security.public_url');
+        if (is_string($override) && trim($override) !== '') {
+            return trim($override);
+        }
+
+        $appUrl = config('app.url');
+
+        return is_string($appUrl) && trim($appUrl) !== '' ? trim($appUrl) : null;
+    }
+}

@@ -12,6 +12,7 @@ use AppRadar\Agent\Laravel\Checks\DatabaseCheck;
 use AppRadar\Agent\Laravel\Checks\QueueHealthCheck;
 use AppRadar\Agent\Laravel\Checks\RedisCheck;
 use AppRadar\Agent\Laravel\Checks\SchedulerHeartbeatCheck;
+use AppRadar\Agent\Laravel\Checks\SecurityCheck;
 use AppRadar\Agent\Laravel\Checks\TestsCheck;
 use AppRadar\Agent\Laravel\Support\TestRunner;
 
@@ -24,17 +25,19 @@ class LaravelAdapter implements AdapterInterface
         $scheduler = app(SchedulerHeartbeatCheck::class)->run();
         $queue = app(QueueHealthCheck::class)->run();
         $tests = app(TestsCheck::class)->run();
+        $security = app(SecurityCheck::class)->run();
 
         return (new StatusReport(
             name: (string) config('app.name'),
             environment: app()->environment(),
-            status: app(StatusRunner::class)->overallStatus([$database, $redis, $scheduler, $queue, $tests]),
+            status: app(StatusRunner::class)->overallStatus([$database, $redis, $scheduler, $queue, $tests, $security]),
             checkedAt: now()->toImmutable(),
             database: $database,
             redis: $redis,
             scheduler: $scheduler,
             queue: $queue,
             tests: $tests,
+            security: $security,
         ))->toArray();
     }
 

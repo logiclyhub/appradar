@@ -22,6 +22,7 @@ class StatusReport implements Arrayable, JsonSerializable
         public readonly SchedulerStatus $scheduler,
         public readonly QueueStatus $queue,
         public readonly TestsStatus $tests,
+        public readonly SecurityStatus $security,
     ) {
     }
 
@@ -40,6 +41,9 @@ class StatusReport implements Arrayable, JsonSerializable
             scheduler: SchedulerStatus::fromArray(is_array($payload['scheduler'] ?? null) ? $payload['scheduler'] : []),
             queue: QueueStatus::fromArray(is_array($payload['queue'] ?? null) ? $payload['queue'] : []),
             tests: TestsStatus::fromArray(is_array($payload['tests'] ?? null) ? $payload['tests'] : []),
+            security: isset($payload['security']) && is_array($payload['security'])
+                ? SecurityStatus::fromArray($payload['security'])
+                : SecurityStatus::clean(),
         );
     }
 
@@ -54,6 +58,7 @@ class StatusReport implements Arrayable, JsonSerializable
             SchedulerStatus::key() => $this->scheduler,
             QueueStatus::key() => $this->queue,
             TestsStatus::key() => $this->tests,
+            SecurityStatus::key() => $this->security,
         ];
     }
 
@@ -72,6 +77,7 @@ class StatusReport implements Arrayable, JsonSerializable
             'scheduler' => $this->scheduler->toArray(),
             'queue' => $this->queue->toArray(),
             'tests' => $this->tests->toArray(),
+            'security' => $this->security->toArray(),
         ];
     }
 
