@@ -14,6 +14,10 @@ final class SensitiveWebPathChecker
     ) {
     }
 
+    /**
+     * Only report issues when paths are actually downloadable over HTTP.
+     * Disk presence alone is ignored (WAF/403 means no finding).
+     */
     public function probeHttp(string $publicUrl): SecurityIssueCollection
     {
         $base = rtrim($publicUrl, '/');
@@ -42,41 +46,6 @@ final class SensitiveWebPathChecker
                 title: '.git publicly reachable',
                 message: 'HTTP GET '.$base.'/.git/HEAD returned '.$git->statusCode.' with git HEAD contents.',
                 remediation: 'Block web access to .git (or remove it from the web root).',
-            )));
-        }
-
-        return $issues;
-    }
-
-    /**
-     * Disk presence under the webroot path — warn only (WAF may still block HTTP).
-     */
-    public function probeDisk(string $publicPath): SecurityIssueCollection
-    {
-        $public = rtrim($publicPath, DIRECTORY_SEPARATOR);
-        if ($public === '') {
-            return SecurityIssueCollection::empty();
-        }
-
-        $issues = SecurityIssueCollection::empty();
-
-        if (is_file($public.DIRECTORY_SEPARATOR.'.env')) {
-            $issues = $issues->merge(SecurityIssueCollection::of(new SecurityIssue(
-                id: 'env_file_in_public_path',
-                severity: StatusCodes::WARN,
-                title: '.env present in public path',
-                message: 'A .env file exists under the configured public path. It may still be blocked by the web server/WAF.',
-                remediation: 'Move .env outside the web root. Prefer confirming it is not HTTP-reachable.',
-            )));
-        }
-
-        if (is_dir($public.DIRECTORY_SEPARATOR.'.git')) {
-            $issues = $issues->merge(SecurityIssueCollection::of(new SecurityIssue(
-                id: 'git_dir_in_public_path',
-                severity: StatusCodes::WARN,
-                title: '.git present in public path',
-                message: 'A .git directory exists under the configured public path. It may still be blocked by the web server/WAF.',
-                remediation: 'Remove .git from the web root (deploy without .git).',
             )));
         }
 

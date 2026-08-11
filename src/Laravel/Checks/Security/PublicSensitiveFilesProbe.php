@@ -17,19 +17,14 @@ final class PublicSensitiveFilesProbe implements SecurityProbeInterface
 
     public function probe(): SecurityIssueCollection
     {
+        if (! is_string($this->context->publicUrl) || trim($this->context->publicUrl) === '') {
+            return SecurityIssueCollection::empty();
+        }
+
         $checker = $this->checker ?? new SensitiveWebPathChecker(
             timeoutSeconds: $this->context->sslTimeoutSeconds,
         );
 
-        $issues = SecurityIssueCollection::empty();
-
-        if (is_string($this->context->publicUrl) && trim($this->context->publicUrl) !== '') {
-            $issues = $issues->merge($checker->probeHttp($this->context->publicUrl));
-        }
-
-        // Disk presence is warn-only; HTTP confirmation above is the real error.
-        $issues = $issues->merge($checker->probeDisk($this->context->publicPath));
-
-        return $issues;
+        return $checker->probeHttp($this->context->publicUrl);
     }
 }

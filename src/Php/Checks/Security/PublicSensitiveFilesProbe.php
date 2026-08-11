@@ -17,21 +17,16 @@ final class PublicSensitiveFilesProbe implements SecurityProbeInterface
 
     public function probe(): SecurityIssueCollection
     {
-        $settings = $this->context->security;
+        $publicUrl = $this->context->security->publicUrl;
+
+        if (! is_string($publicUrl) || trim($publicUrl) === '') {
+            return SecurityIssueCollection::empty();
+        }
+
         $checker = $this->checker ?? new SensitiveWebPathChecker(
-            timeoutSeconds: $settings->sslTimeoutSeconds,
+            timeoutSeconds: $this->context->security->sslTimeoutSeconds,
         );
 
-        $issues = SecurityIssueCollection::empty();
-
-        if (is_string($settings->publicUrl) && trim($settings->publicUrl) !== '') {
-            $issues = $issues->merge($checker->probeHttp($settings->publicUrl));
-        }
-
-        if (is_string($settings->publicPath) && trim($settings->publicPath) !== '') {
-            $issues = $issues->merge($checker->probeDisk($settings->publicPath));
-        }
-
-        return $issues;
+        return $checker->probeHttp($publicUrl);
     }
 }

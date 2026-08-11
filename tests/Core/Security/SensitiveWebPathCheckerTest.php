@@ -31,7 +31,7 @@ final class SensitiveWebPathCheckerTest extends TestCase
         $this->assertNotContains('git_dir_publicly_reachable', $ids);
     }
 
-    public function test_http_forbidden_is_not_error(): void
+    public function test_http_forbidden_reports_no_issue(): void
     {
         $fetcher = new class implements HttpFetcherInterface {
             public function get(string $url, float $timeoutSeconds = 3.0): HttpFetchResult
@@ -61,28 +61,5 @@ final class SensitiveWebPathCheckerTest extends TestCase
         $issues = (new SensitiveWebPathChecker($fetcher))->probeHttp('https://example.com');
 
         $this->assertSame('git_dir_publicly_reachable', $issues->first()?->id);
-    }
-
-    public function test_disk_presence_is_warn_only(): void
-    {
-        $dir = sys_get_temp_dir().'/appradar-public-'.uniqid();
-        mkdir($dir);
-        file_put_contents($dir.'/.env', "APP_KEY=test\n");
-        mkdir($dir.'/.git');
-
-        try {
-            $issues = (new SensitiveWebPathChecker())->probeDisk($dir);
-            $ids = array_map(static fn ($i) => $i->id, $issues->all());
-
-            $this->assertContains('env_file_in_public_path', $ids);
-            $this->assertContains('git_dir_in_public_path', $ids);
-            foreach ($issues->all() as $issue) {
-                $this->assertSame(StatusCodes::WARN, $issue->severity);
-            }
-        } finally {
-            @unlink($dir.'/.env');
-            @rmdir($dir.'/.git');
-            @rmdir($dir);
-        }
     }
 }
