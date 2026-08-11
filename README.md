@@ -86,6 +86,8 @@ Redis needs `ext-redis` or `predis/predis`.
 - `score` — **0–100 meter** (`100` = all checks clean). Formula: `max(0, 100 - errors*20 - warns*5)`
 - `issues` — findings with `id`, `severity`, `title`, `message`, `remediation`
 
+Laravel posture checks (inspired by Laravel Doctor ideas, **no** `laravel/doctor` dependency) also cover missing PHP extensions, unwritable `storage/`, missing `storage:link`, `sync` queue / `array` sessions in non-local, and missing config cache.
+
 SSL is part of `security` (not a separate top-level section). The agent opens TLS to the public host (`APP_URL` on Laravel, or `security.public_url` on plain PHP). It does **not** trust “was this HTTP request HTTPS?” behind proxies.
 
 Optional: set `security.composer_audit` to `true` (Laravel) to run `composer audit` (slower; off by default).
