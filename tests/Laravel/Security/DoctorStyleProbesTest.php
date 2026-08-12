@@ -3,11 +3,9 @@
 namespace AppRadar\Agent\Tests\Laravel\Security;
 
 use AppRadar\Agent\Core\StatusCodes;
-use AppRadar\Agent\Laravel\Checks\Security\BootstrapCacheProbe;
 use AppRadar\Agent\Laravel\Checks\Security\PhpExtensionProbe;
 use AppRadar\Agent\Laravel\Checks\Security\QueueSyncProbe;
 use AppRadar\Agent\Laravel\Checks\Security\SessionDriverProbe;
-use AppRadar\Agent\Laravel\Checks\Security\StorageLinkProbe;
 use AppRadar\Agent\Laravel\Checks\Security\StorageWritableProbe;
 use AppRadar\Agent\Laravel\Security\LaravelSecurityContext;
 use PHPUnit\Framework\TestCase;
@@ -34,17 +32,6 @@ final class DoctorStyleProbesTest extends TestCase
         $this->assertSame('storage_not_writable', $issues->first()?->id);
     }
 
-    public function test_storage_link_probe(): void
-    {
-        $issues = (new StorageLinkProbe($this->context(
-            publicStorageLinkPresent: false,
-            filesystemDisk: 'public',
-        )))->probe();
-
-        $this->assertSame('storage_link_missing', $issues->first()?->id);
-        $this->assertSame(StatusCodes::WARN, $issues->first()?->severity);
-    }
-
     public function test_queue_sync_in_production(): void
     {
         $issues = (new QueueSyncProbe($this->context(
@@ -66,16 +53,6 @@ final class DoctorStyleProbesTest extends TestCase
         $this->assertSame(0, $issues->count());
     }
 
-    public function test_bootstrap_cache_missing_in_production(): void
-    {
-        $issues = (new BootstrapCacheProbe($this->context(
-            environment: 'production',
-            configCachePresent: false,
-        )))->probe();
-
-        $this->assertSame('bootstrap_cache_missing', $issues->first()?->id);
-    }
-
     public function test_session_array_driver_in_production(): void
     {
         $issues = (new SessionDriverProbe($this->context(
@@ -94,9 +71,6 @@ final class DoctorStyleProbesTest extends TestCase
         string $environment = 'production',
         string $sessionDriver = 'file',
         string $queueDriver = 'redis',
-        string $filesystemDisk = 'local',
-        bool $publicStorageLinkPresent = true,
-        bool $configCachePresent = true,
         array $missingPhpExtensions = [],
         array $unwritableStoragePaths = [],
     ): LaravelSecurityContext {
@@ -120,9 +94,6 @@ final class DoctorStyleProbesTest extends TestCase
             redisPasswordEmpty: false,
             queueDriver: $queueDriver,
             cacheDriver: 'redis',
-            filesystemDisk: $filesystemDisk,
-            publicStorageLinkPresent: $publicStorageLinkPresent,
-            configCachePresent: $configCachePresent,
             missingPhpExtensions: $missingPhpExtensions,
             unwritableStoragePaths: $unwritableStoragePaths,
             telescopeEnabled: false,

@@ -1,148 +1,15 @@
 # AppRadar Agent
 
-Framework-aware application agent for AppRadar.
+In-app agent for AppRadar. Exposes a `/status` endpoint with health and security checks.
 
-- **Laravel** — auto-discovers DB, Redis, scheduler, queue, tests, and security posture (incl. SSL)
-- **Plain PHP** — checks DB/Redis/security when you fill in `config/appradar.php`
+**Laravel** — auto-wires routes and reads DB/Redis from your app.  
+**Plain PHP** — you mount the endpoint and fill in config yourself.
 
-## What This Package Does
-
-### Laravel
-
-It registers:
-
-- `GET /status`
-- `POST /status/tests/run`
-
-It also wires:
-
-- queue activity listeners
-- scheduler activity listeners
-- scheduler heartbeat registration
-
-### Plain PHP
-
-You mount a small endpoint yourself and point it at a config file. If database/redis credentials are empty, those sections return a warning (`not configured`). Queue, scheduler, and tests are not available without a framework.
-
-Example front controller (`public/appradar-status.php`):
-
-```php
-<?php
-
-require __DIR__.'/../vendor/autoload.php';
-
-use AppRadar\Agent\Php\Http\StatusEndpoint;
-
-StatusEndpoint::fromConfigFile(__DIR__.'/../config/appradar.php')->respond();
-```
-
-Then copy the package config and fill in credentials:
-
-```bash
-cp vendor/appradar/agent/config/appradar.php config/appradar.php
-```
-
-Plain PHP config fields (ignored by Laravel):
-
-```php
-'app' => [
-    'name' => 'My App',
-    'environment' => 'production',
-],
-
-'database' => [
-    'driver' => 'mysql', // or pgsql / sqlite, or set dsn instead
-    'host' => '127.0.0.1',
-    'port' => 3306,
-    'database' => 'my_app',
-    'username' => 'root',
-    'password' => 'secret',
-    'dsn' => null,
-],
-
-'redis' => [
-    'host' => '127.0.0.1',
-    'port' => 6379,
-    'password' => null,
-    'database' => 0,
-    'timeout' => 1.0,
-],
-
-'security' => [
-    'public_url' => 'https://example.com',
-    'public_path' => __DIR__.'/../public',
-    'ssl_check' => true,
-    'ssl_expiry_warn_days' => 14,
-],
-```
-
-Redis needs `ext-redis` or `predis/predis`.
-
-## Security section
-
-`/status` includes a `security` object:
-
-- `status` — `0` ok / `1` warn / `2` error (worst finding)
-- `score` — **0–100 meter** (`100` = all checks clean). Formula: `max(0, 100 - errors*20 - warns*5)`
-- `issues` — findings with `id`, `severity`, `title`, `message`, `remediation`
-
-Laravel posture checks (inspired by Laravel Doctor ideas, **no** `laravel/doctor` dependency) also cover missing PHP extensions, unwritable `storage/`, missing `storage:link`, `sync` queue / `array` sessions in non-local, and missing config cache.
-
-SSL is part of `security` (not a separate top-level section). The agent opens TLS to the public host (`APP_URL` on Laravel, or `security.public_url` on plain PHP). It does **not** trust “was this HTTP request HTTPS?” behind proxies.
-
-Optional: set `security.composer_audit` to `true` (Laravel) to run `composer audit` (slower; off by default).
-
-Live intrusion / “hackers probing now” detection is not included yet.
-
-## Shared Contract
-
-This package is both:
-
-- the agent that exposes the status endpoint inside supported apps
-- the shared contract/SDK that can parse those endpoint responses elsewhere
-
-Example:
-
-```php
-use AppRadar\Agent\Data\StatusReport;
-
-$report = StatusReport::fromArray($payload);
-
-$databaseStatus = $report->database;
-$allSections = $report->sections();
-```
+---
 
 ## Install
 
-For a tagged release:
-
-```bash
-composer require appradar/agent:^1.0
-```
-
-For local development through a path repository:
-
-```json
-{
-  "repositories": [
-    {
-      "type": "path",
-      "url": "../../Projects/appradar-agent",
-      "options": {
-        "symlink": true
-      }
-    }
-  ]
-}
-```
-
-Then require the package:
-
-```bash
-composer require appradar/agent:@dev
-```
-
-For private GitHub installation:
+This package is private. Add the GitHub repo to your app’s `composer.json`:
 
 ```json
 {
@@ -155,68 +22,222 @@ For private GitHub installation:
 }
 ```
 
-Then require the main branch:
+Then require it (use a tag when you can):
+
+```bash
+composer require appradar/agent:^1.2
+```
+
+Or track main:
 
 ```bash
 composer require appradar/agent:dev-main
 ```
 
-## Config
+You need GitHub SSH access (or a token) so Composer can clone the repo.
+
+### Local path (development)
+
+```json
+{
+  "repositories": [
+    {
+      "type": "path",
+      "url": "../appradar-agent",
+      "options": { "symlink": true }
+    }
+  ]
+}
+```
+
+```bash
+composer require appradar/agent:@dev
+```
+
+---
+
+## Setup
 
 ### Laravel
 
-Publish the config if you want to override defaults:
+Publish the config:
 
 ```bash
 php artisan vendor:publish --tag=appradar-config
 ```
 
-Laravel still reads DB/Redis from the app's normal config/env. The `database` / `redis` blocks in `appradar.php` are only for plain PHP.
-
-Default config:
-
-- route path: `status`
-- only local environment: `false`
-- status storage path: `app/status`
-- scheduler heartbeat: every minute
-
-### Protecting `/status`
-
-By default the endpoint is public so AppRadar can connect quickly.
-
-To lock every agent route (`/status`, `/status/tests/run`, …), set a shared token:
-
-```env
-APPRADAR_STATUS_TOKEN=apr_your_token_from_appradar
-```
-
-Or in `config/appradar.php`:
-
-```php
-'status_token' => env('APPRADAR_STATUS_TOKEN', ''),
-```
-
-When set, requests must include:
-
-```http
-Authorization: Bearer apr_your_token_from_appradar
-```
-
-(or `X-AppRadar-Token: apr_…`). Missing/wrong token returns `401`.
-
-Generate and copy the token from the app settings in AppRadar (“Protect status endpoint”).
+That creates `config/appradar.php`.  
+Routes `GET /status` and `POST /status/tests/run` are registered automatically.
 
 ### Plain PHP
 
-Copy `config/appradar.php` into your app and fill `app`, `database`, and/or `redis`. Nothing is auto-discovered.
+1. Copy the example config:
 
-## Current Scope
+```bash
+cp vendor/appradar/agent/config/appradar.php config/appradar.php
+```
 
-| Capability | Laravel | Plain PHP |
-|------------|---------|-----------|
-| Database | auto | explicit config |
-| Redis | auto | explicit config |
-| Scheduler | yes | not available |
-| Queue | yes | not available |
-| Tests | yes | not available |
-| Security (+ SSL meter) | yes | yes (smaller probe set) |
+2. Fill in `app`, `database`, `redis`, and `security` (see below).
+
+3. Add a front controller, e.g. `public/appradar-status.php`:
+
+```php
+<?php
+
+require __DIR__.'/../vendor/autoload.php';
+
+use AppRadar\Agent\Php\Http\StatusEndpoint;
+
+StatusEndpoint::fromConfigFile(__DIR__.'/../config/appradar.php')->respond();
+```
+
+Point AppRadar at that URL. Queue, scheduler, and tests are Laravel-only.
+
+---
+
+## Config
+
+All keys live in `config/appradar.php` (published or copied).
+
+### `secret`
+
+Protects every agent route **and** authenticates error ingest. Empty = `/status` public.
+
+```env
+APPRADAR_SECRET=apr_your_secret_from_appradar
+```
+
+(`APPRADAR_STATUS_TOKEN` still works as a legacy alias.)
+
+Requests need:
+
+```http
+Authorization: Bearer apr_your_secret_from_appradar
+```
+
+or `X-AppRadar-Token: apr_…`. Wrong/missing → `401`.
+
+### `route` (Laravel)
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `path` | `status` | URL path for the status endpoint |
+| `middleware` | `['web']` | Middleware stack |
+| `name` | `appradar.status` | Route name |
+| `tests_name` | `appradar.status.tests.run` | Tests-run route name |
+
+### `only_local`
+
+If `true`, status only works in `local` / `testing`. Default `false` so AppRadar can reach production.
+
+### `storage_path` (Laravel)
+
+Where the agent stores status data (relative to `storage/`). Default `app/status`.
+
+### `scheduler` (Laravel)
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `heartbeat_name` | `appradar-heartbeat` | Scheduled heartbeat job name |
+
+### `queue` (Laravel)
+
+Windows and thresholds for queue health (activity, problems, timeouts, retention). Defaults are fine for most apps.
+
+### `app` (plain PHP only)
+
+Laravel uses `config('app.*')` instead.
+
+```php
+'app' => [
+    'name' => 'My App',
+    'environment' => 'production',
+],
+```
+
+### `database` (plain PHP only)
+
+Laravel uses `config/database.php`. Leave empty on plain PHP to skip DB checks (status warns “not configured”).
+
+```php
+'database' => [
+    'driver' => 'mysql', // mysql, pgsql, sqlite
+    'host' => '127.0.0.1',
+    'port' => 3306,
+    'database' => 'my_app',
+    'username' => 'root',
+    'password' => 'secret',
+    'dsn' => null, // optional full PDO DSN instead of fields above
+],
+```
+
+### `redis` (plain PHP only)
+
+Laravel uses its own Redis config. Needs `ext-redis` or `predis/predis`. Empty `host` = skip Redis checks.
+
+```php
+'redis' => [
+    'host' => '127.0.0.1',
+    'port' => 6379,
+    'password' => null,
+    'database' => 0,
+    'timeout' => 1.0,
+],
+```
+
+### `security`
+
+Feeds the `security` section on `/status` (issues + 0–100 score).
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `composer_audit` | `false` | Laravel: run `composer audit` (slow; opt-in) |
+| `php_unsupported_below` | `8.2.0` | PHP below this → issue |
+| `php_eol_below` | `8.1.0` | PHP below this → stronger issue |
+| `public_url` | `null` | Host for SSL check (Laravel falls back to `APP_URL`) |
+| `public_path` | `null` | Plain PHP: path to public dir (for HTTP checks) |
+| `ssl_check` | `true` | Outbound TLS check against public URL |
+| `ssl_expiry_warn_days` | `14` | Warn when cert expires within N days |
+| `ssl_timeout_seconds` | `3.0` | SSL probe timeout |
+
+### `errors` (Laravel)
+
+Exception reporting to AppRadar. **Auto-on** when `app_uuid` + `secret` are set. Does not replace Laravel’s handler / Sentry.
+
+Fixed webhook (SaaS default):
+
+`https://appradar.nl/api/agent/apps/{uuid}/errors`
+
+```env
+APPRADAR_APP_UUID=550e8400-e29b-41d4-a716-446655440000
+APPRADAR_SECRET=apr_…
+# only while testing against local AppRadar:
+# APPRADAR_URL=http://127.0.0.1:8000
+```
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `app_uuid` | `APPRADAR_APP_UUID` | App UUID from AppRadar |
+| `base_url` | `https://appradar.nl` | Local/self-host: set `APPRADAR_URL=http://127.0.0.1:8000` |
+| `sample_rate` | `1.0` | Fraction of errors to send |
+| `send_timeout_seconds` | `2.0` | HTTP timeout; failures swallowed |
+| `release` | `APPRADAR_RELEASE` | Optional release label |
+| `ignore` | `[]` | Extra exception classes to skip |
+
+Secret is the top-level `secret` / `APPRADAR_SECRET` — not a separate errors token.
+
+---
+
+## What you get
+
+| | Laravel | Plain PHP |
+|--|---------|-----------|
+| Database | auto | config |
+| Redis | auto | config |
+| Scheduler | yes | — |
+| Queue | yes | — |
+| Tests | yes | — |
+| Security (+ SSL) | yes | yes (smaller set) |
+| Error reporting | yes (opt-in) | — (later) |
+
+`/status` → JSON. Security includes `status` (0/1/2), `score` (0–100), and `issues[]`.

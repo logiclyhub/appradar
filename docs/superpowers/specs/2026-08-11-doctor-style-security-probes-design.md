@@ -17,10 +17,10 @@ All findings go into the existing `security` section (issues + 0–100 meter).
 |----------|----------|-----------|
 | `php_extension_missing` | error (one issue per missing ext, or one issue listing all) | Missing required PHP extensions |
 | `storage_not_writable` | error | Required storage dirs not writable |
-| `storage_link_missing` | warn | `public/storage` missing when public disk expected |
 | `queue_sync_in_production` | error | Default queue connection driver is `sync` in non-local |
-| `bootstrap_cache_missing` | warn | Non-local and `bootstrap/cache/config.php` missing |
 | `session_driver_array_in_production` | warn | `session.driver` is `array` in non-local |
+
+Not security (removed from probes): `storage_link_missing`, `bootstrap_cache_missing` — deploy/ops concerns.
 
 ## Extension list
 

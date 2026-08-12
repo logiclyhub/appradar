@@ -26,16 +26,17 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Status endpoint token
+    | Agent secret
     |--------------------------------------------------------------------------
     |
-    | When empty, /status (and related agent routes) stay public.
-    | When set, every agent HTTP route requires:
-    |   Authorization: Bearer <token>
-    | or header X-AppRadar-Token: <token>
+    | Shared secret from AppRadar app settings. When empty, /status stays public.
+    | When set, agent HTTP routes require Authorization: Bearer <secret>
+    | (or X-AppRadar-Token). Same secret authenticates error ingest.
+    |
+    | APPRADAR_STATUS_TOKEN is still accepted as a legacy env alias.
     |
     */
-    'status_token' => env('APPRADAR_STATUS_TOKEN', ''),
+    'secret' => env('APPRADAR_SECRET', env('APPRADAR_STATUS_TOKEN', '')),
 
     'storage_path' => 'app/status',
 
@@ -56,11 +57,6 @@ return [
     |--------------------------------------------------------------------------
     | Database (plain PHP only)
     |--------------------------------------------------------------------------
-    |
-    | Laravel ignores this block and uses config/database.php + .env.
-    | For plain PHP, fill either `dsn` or discrete driver/host/database fields.
-    | Leave empty to skip live DB checks (status will warn "not configured").
-    |
     */
     'database' => [
         'driver' => null, // mysql, pgsql, sqlite
@@ -69,18 +65,13 @@ return [
         'database' => null,
         'username' => null,
         'password' => null,
-        'dsn' => null, // optional full PDO DSN instead of discrete fields
+        'dsn' => null,
     ],
 
     /*
     |--------------------------------------------------------------------------
     | Redis (plain PHP only)
     |--------------------------------------------------------------------------
-    |
-    | Laravel ignores this block and uses config/database.php redis section.
-    | For plain PHP, set host (and optional auth). Needs ext-redis or predis/predis.
-    | Leave host empty to skip live Redis checks.
-    |
     */
     'redis' => [
         'host' => null,
@@ -94,11 +85,6 @@ return [
     |--------------------------------------------------------------------------
     | Security
     |--------------------------------------------------------------------------
-    |
-    | Feeds the status payload `security` section (issues + 0-100 score meter).
-    | SSL checks use an outbound TLS probe against public_url (Laravel defaults
-    | to config('app.url') when public_url is null).
-    |
     */
     'security' => [
         'composer_audit' => false,
@@ -109,5 +95,27 @@ return [
         'ssl_check' => true,
         'ssl_expiry_warn_days' => 14,
         'ssl_timeout_seconds' => 3.0,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Error reporting (Laravel)
+    |--------------------------------------------------------------------------
+    |
+    | Auto-on when app_uuid + secret are set. Posts to the fixed webhook:
+    |   {APPRADAR_URL|https://appradar.nl}/api/agent/apps/{app_uuid}/errors
+    | Local AppRadar: set APPRADAR_URL=http://127.0.0.1:8000
+    | Uses the same agent secret. Does not replace your exception handler.
+    |
+    */
+    'errors' => [
+        'app_uuid' => env('APPRADAR_APP_UUID'),
+        // Optional: only for local/self-hosted AppRadar. SaaS users leave unset.
+        'base_url' => env('APPRADAR_URL'),
+        'sample_rate' => 1.0,
+        'send_timeout_seconds' => 2.0,
+        'environment' => null,
+        'release' => env('APPRADAR_RELEASE'),
+        'ignore' => [],
     ],
 ];

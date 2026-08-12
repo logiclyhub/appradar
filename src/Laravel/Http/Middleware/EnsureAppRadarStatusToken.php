@@ -10,7 +10,10 @@ class EnsureAppRadarStatusToken
 {
     public function handle(Request $request, Closure $next): Response
     {
-        $expected = trim((string) config('appradar.status_token', ''));
+        $expected = trim((string) config('appradar.secret', ''));
+        if ($expected === '') {
+            $expected = trim((string) config('appradar.status_token', ''));
+        }
 
         if ($expected === '') {
             return $next($request);

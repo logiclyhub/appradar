@@ -25,8 +25,8 @@ final class StatusEndpointExposureProbe implements SecurityProbeInterface
             id: 'status_endpoint_unprotected',
             severity: StatusCodes::ERROR,
             title: 'Status endpoint unprotected',
-            message: 'APPRADAR_STATUS_TOKEN is empty, so the status endpoint is publicly readable without authentication.',
-            remediation: 'Set APPRADAR_STATUS_TOKEN and send it as Authorization: Bearer <token> (or X-AppRadar-Token).',
+            message: 'APPRADAR_SECRET is empty, so the status endpoint is publicly readable without authentication.',
+            remediation: 'Set APPRADAR_SECRET and send it as Authorization: Bearer <secret> (or X-AppRadar-Token).',
         ));
     }
 }

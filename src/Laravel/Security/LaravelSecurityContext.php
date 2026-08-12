@@ -28,9 +28,6 @@ final class LaravelSecurityContext
         public readonly bool $redisPasswordEmpty,
         public readonly string $queueDriver,
         public readonly string $cacheDriver,
-        public readonly string $filesystemDisk,
-        public readonly bool $publicStorageLinkPresent,
-        public readonly bool $configCachePresent,
         public readonly array $missingPhpExtensions,
         public readonly array $unwritableStoragePaths,
         public readonly bool $telescopeEnabled,
@@ -60,7 +57,6 @@ final class LaravelSecurityContext
         $cacheStore = (string) config('cache.default', 'file');
         $cacheDriver = (string) config("cache.stores.{$cacheStore}.driver", $cacheStore);
         $sessionDriver = (string) config('session.driver', 'file');
-        $filesystemDisk = (string) config('filesystems.default', 'local');
         $storagePath = storage_path();
         $publicPath = public_path();
 
@@ -77,16 +73,13 @@ final class LaravelSecurityContext
             publicPath: $publicPath,
             storagePath: $storagePath,
             onlyLocalStatus: (bool) config('appradar.only_local', false),
-            statusTokenConfigured: trim((string) config('appradar.status_token', '')) !== '',
+            statusTokenConfigured: trim((string) (config('appradar.secret') ?: config('appradar.status_token', ''))) !== '',
             databasePasswordEmpty: trim((string) config('database.connections.'.config('database.default').'.password', '')) === '',
             databaseDriver: $databaseDriver,
             redisConfigured: $defaultRedis !== '',
             redisPasswordEmpty: $redisPassword === null || $redisPassword === '',
             queueDriver: $queueDriver,
             cacheDriver: $cacheDriver,
-            filesystemDisk: $filesystemDisk,
-            publicStorageLinkPresent: self::publicStorageLinkPresent($publicPath),
-            configCachePresent: is_file(base_path('bootstrap/cache/config.php')),
             missingPhpExtensions: self::missingPhpExtensions($databaseDriver, $queueDriver, $cacheDriver, $sessionDriver),
             unwritableStoragePaths: self::unwritableStoragePaths($storagePath),
             telescopeEnabled: (bool) config('telescope.enabled', false),
@@ -111,13 +104,6 @@ final class LaravelSecurityContext
         $appUrl = config('app.url');
 
         return is_string($appUrl) && trim($appUrl) !== '' ? trim($appUrl) : null;
-    }
-
-    private static function publicStorageLinkPresent(string $publicPath): bool
-    {
-        $link = rtrim($publicPath, DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.'storage';
-
-        return is_link($link) || is_dir($link);
     }
 
     /**

@@ -50,7 +50,7 @@ final class PhpAgentConfig
             environment: self::stringOr($app['environment'] ?? null, 'production'),
             onlyLocal: (bool) ($payload['only_local'] ?? false),
             routePath: trim(self::stringOr($route['path'] ?? null, 'status'), '/'),
-            statusToken: self::resolveStatusToken($payload['status_token'] ?? null),
+            statusToken: self::resolveSecret($payload),
             database: new DatabaseConnectionConfig(
                 driver: self::nullableString($database['driver'] ?? null),
                 host: self::nullableString($database['host'] ?? null),
@@ -79,15 +79,26 @@ final class PhpAgentConfig
         );
     }
 
-    private static function resolveStatusToken(mixed $configured): string
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private static function resolveSecret(array $payload): string
     {
-        if (is_string($configured) && trim($configured) !== '') {
-            return trim($configured);
+        foreach (['secret', 'status_token'] as $key) {
+            $configured = $payload[$key] ?? null;
+            if (is_string($configured) && trim($configured) !== '') {
+                return trim($configured);
+            }
         }
 
-        $fromEnv = getenv('APPRADAR_STATUS_TOKEN');
+        foreach (['APPRADAR_SECRET', 'APPRADAR_STATUS_TOKEN'] as $envKey) {
+            $fromEnv = getenv($envKey);
+            if (is_string($fromEnv) && trim($fromEnv) !== '') {
+                return trim($fromEnv);
+            }
+        }
 
-        return is_string($fromEnv) ? trim($fromEnv) : '';
+        return '';
     }
 
     private static function stringOr(mixed $value, string $default): string
