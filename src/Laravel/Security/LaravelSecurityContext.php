@@ -83,13 +83,13 @@ final class LaravelSecurityContext
             missingPhpExtensions: self::missingPhpExtensions($databaseDriver, $queueDriver, $cacheDriver, $sessionDriver),
             unwritableStoragePaths: self::unwritableStoragePaths($storagePath),
             telescopeEnabled: (bool) config('telescope.enabled', false),
-            composerAuditEnabled: (bool) config('appradar.security.composer_audit', false),
+            composerAuditEnabled: false,
             publicUrl: self::resolvePublicUrl(),
             sslCheckEnabled: (bool) config('appradar.security.ssl_check', true),
             sslExpiryWarnDays: (int) config('appradar.security.ssl_expiry_warn_days', 14),
             sslTimeoutSeconds: (float) config('appradar.security.ssl_timeout_seconds', 3.0),
-            phpUnsupportedBelow: (string) config('appradar.security.php_unsupported_below', '8.2.0'),
-            phpEolBelow: (string) config('appradar.security.php_eol_below', '8.1.0'),
+            phpUnsupportedBelow: '8.2.0',
+            phpEolBelow: '8.1.0',
             basePath: base_path(),
         );
     }

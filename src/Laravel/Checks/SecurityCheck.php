@@ -8,11 +8,9 @@ use AppRadar\Agent\Data\SecurityIssueCollection;
 use AppRadar\Agent\Data\SecurityStatus;
 use AppRadar\Agent\Laravel\Checks\Security\AppDebugProbe;
 use AppRadar\Agent\Laravel\Checks\Security\AppKeyProbe;
-use AppRadar\Agent\Laravel\Checks\Security\ComposerAuditProbe;
 use AppRadar\Agent\Laravel\Checks\Security\DatabasePasswordProbe;
 use AppRadar\Agent\Laravel\Checks\Security\PhpDisplayErrorsProbe;
 use AppRadar\Agent\Laravel\Checks\Security\PhpExtensionProbe;
-use AppRadar\Agent\Laravel\Checks\Security\PhpVersionEolProbe;
 use AppRadar\Agent\Laravel\Checks\Security\PublicSensitiveFilesProbe;
 use AppRadar\Agent\Laravel\Checks\Security\QueueSyncProbe;
 use AppRadar\Agent\Laravel\Checks\Security\RedisPasswordProbe;
@@ -62,9 +60,7 @@ class SecurityCheck implements StatusCheckInterface
             new RedisPasswordProbe($context),
             new QueueSyncProbe($context),
             new StorageWritableProbe($context),
-            new PhpVersionEolProbe($context),
             new SslCertificateProbe($context),
-            new ComposerAuditProbe($context),
         ];
     }
 }

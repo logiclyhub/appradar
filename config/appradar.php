@@ -15,6 +15,17 @@ return [
         'environment' => null,
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Project root (plain PHP)
+    |--------------------------------------------------------------------------
+    |
+    | Optional. When null, the agent walks up from this config file until it
+    | finds composer.lock / composer.json (so config/appradar.php still works).
+    |
+    */
+    'base_path' => null,
+
     'route' => [
         'path' => 'status',
         'middleware' => ['web'],
@@ -87,14 +98,20 @@ return [
     |--------------------------------------------------------------------------
     */
     'security' => [
-        'composer_audit' => false,
-        'php_unsupported_below' => '8.2.0',
-        'php_eol_below' => '8.1.0',
         'public_url' => null,
         'public_path' => null,
         'ssl_check' => true,
         'ssl_expiry_warn_days' => 14,
         'ssl_timeout_seconds' => 3.0,
+    ],
+
+    'maintenance' => [
+        'composer_audit' => env('APPRADAR_MAINTENANCE_COMPOSER_AUDIT', true),
+        'composer_audit_cache_seconds' => 86400,
+        'abandoned_check' => env('APPRADAR_MAINTENANCE_ABANDONED', true),
+        'php_unsupported_below' => '8.2.0',
+        'php_eol_below' => '8.1.0',
+        'laravel_security_supported_majors' => [11, 12],
     ],
 
     /*

@@ -16,6 +16,9 @@ final class PhpAgentConfig
         public readonly DatabaseConnectionConfig $database,
         public readonly RedisConnectionConfig $redis,
         public readonly SecuritySettings $security,
+        public readonly bool $maintenanceComposerAudit = true,
+        public readonly int $maintenanceComposerAuditCacheSeconds = 86400,
+        public readonly ?string $basePath = null,
     ) {
     }
 
@@ -31,19 +34,72 @@ final class PhpAgentConfig
             throw new InvalidArgumentException('AppRadar config file must return an array');
         }
 
-        return self::fromPayload($payload);
+        return self::fromPayload($payload, self::resolveBasePath($path, $payload));
+    }
+
+    /**
+     * Prefer explicit config base_path, else walk up from the config file until
+     * composer.lock / composer.json is found (so config/appradar.php still
+     * resolves the project root for maintenance composer audit).
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    private static function resolveBasePath(string $configFilePath, array $payload): string
+    {
+        $configured = $payload['base_path'] ?? null;
+        if (! is_string($configured) || trim($configured) === '') {
+            $maintenance = is_array($payload['maintenance'] ?? null) ? $payload['maintenance'] : [];
+            $configured = $maintenance['base_path'] ?? null;
+        }
+
+        if (is_string($configured) && trim($configured) !== '') {
+            $explicit = rtrim(trim($configured), DIRECTORY_SEPARATOR);
+            $resolved = realpath($explicit);
+
+            return $resolved !== false ? $resolved : $explicit;
+        }
+
+        $current = dirname($configFilePath);
+
+        for ($depth = 0; $depth < 8; $depth++) {
+            if (
+                is_file($current.DIRECTORY_SEPARATOR.'composer.lock')
+                || is_file($current.DIRECTORY_SEPARATOR.'composer.json')
+            ) {
+                $resolved = realpath($current);
+
+                return $resolved !== false ? $resolved : $current;
+            }
+
+            $parent = dirname($current);
+            if ($parent === $current) {
+                break;
+            }
+
+            $current = $parent;
+        }
+
+        $fallback = dirname($configFilePath);
+        if (basename($fallback) === 'config') {
+            $fallback = dirname($fallback);
+        }
+
+        $resolved = realpath($fallback);
+
+        return $resolved !== false ? $resolved : $fallback;
     }
 
     /**
      * @param  array<string, mixed>  $payload
      */
-    private static function fromPayload(array $payload): self
+    private static function fromPayload(array $payload, ?string $basePath = null): self
     {
         $app = is_array($payload['app'] ?? null) ? $payload['app'] : [];
         $database = is_array($payload['database'] ?? null) ? $payload['database'] : [];
         $redis = is_array($payload['redis'] ?? null) ? $payload['redis'] : [];
         $route = is_array($payload['route'] ?? null) ? $payload['route'] : [];
         $security = is_array($payload['security'] ?? null) ? $payload['security'] : [];
+        $maintenance = is_array($payload['maintenance'] ?? null) ? $payload['maintenance'] : [];
 
         return new self(
             name: self::stringOr($app['name'] ?? null, 'unknown'),
@@ -73,9 +129,12 @@ final class PhpAgentConfig
                 sslCheck: (bool) ($security['ssl_check'] ?? true),
                 sslExpiryWarnDays: self::nullableInt($security['ssl_expiry_warn_days'] ?? null) ?? 14,
                 sslTimeoutSeconds: self::nullableFloat($security['ssl_timeout_seconds'] ?? null) ?? 3.0,
-                phpUnsupportedBelow: self::stringOr($security['php_unsupported_below'] ?? null, '8.2.0'),
-                phpEolBelow: self::stringOr($security['php_eol_below'] ?? null, '8.1.0'),
+                phpUnsupportedBelow: self::stringOr($maintenance['php_unsupported_below'] ?? null, '8.2.0'),
+                phpEolBelow: self::stringOr($maintenance['php_eol_below'] ?? null, '8.1.0'),
             ),
+            maintenanceComposerAudit: (bool) ($maintenance['composer_audit'] ?? true),
+            maintenanceComposerAuditCacheSeconds: self::nullableInt($maintenance['composer_audit_cache_seconds'] ?? null) ?? 86400,
+            basePath: $basePath,
         );
     }
 

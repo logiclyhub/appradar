@@ -8,6 +8,8 @@ use AppRadar\Agent\Core\StatusRunner;
 use AppRadar\Agent\Data\StatusReport;
 use AppRadar\Agent\Data\TestRunResponse;
 use AppRadar\Agent\Data\TestsStatus;
+use AppRadar\Agent\Data\MaintenanceStatus;
+use AppRadar\Agent\Laravel\Checks\MaintenanceCheck;
 use AppRadar\Agent\Laravel\Checks\DatabaseCheck;
 use AppRadar\Agent\Laravel\Checks\QueueHealthCheck;
 use AppRadar\Agent\Laravel\Checks\RedisCheck;
@@ -26,11 +28,12 @@ class LaravelAdapter implements AdapterInterface
         $queue = app(QueueHealthCheck::class)->run();
         $tests = app(TestsCheck::class)->run();
         $security = app(SecurityCheck::class)->run();
+        $maintenance = app(MaintenanceCheck::class)->run();
 
         return (new StatusReport(
             name: (string) config('app.name'),
             environment: app()->environment(),
-            status: app(StatusRunner::class)->overallStatus([$database, $redis, $scheduler, $queue, $tests, $security]),
+            status: app(StatusRunner::class)->overallStatus([$database, $redis, $scheduler, $queue, $tests, $security, $maintenance]),
             checkedAt: now()->toImmutable(),
             database: $database,
             redis: $redis,
@@ -38,6 +41,7 @@ class LaravelAdapter implements AdapterInterface
             queue: $queue,
             tests: $tests,
             security: $security,
+            maintenance: $maintenance,
         ))->toArray();
     }
 

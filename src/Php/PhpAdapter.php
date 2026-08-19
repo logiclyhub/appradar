@@ -8,6 +8,7 @@ use AppRadar\Agent\Core\StatusRunner;
 use AppRadar\Agent\Data\StatusReport;
 use AppRadar\Agent\Data\TestRunResponse;
 use AppRadar\Agent\Data\TestsStatus;
+use AppRadar\Agent\Php\Checks\MaintenanceCheck;
 use AppRadar\Agent\Php\Checks\DatabaseCheck;
 use AppRadar\Agent\Php\Checks\RedisCheck;
 use AppRadar\Agent\Php\Checks\SecurityCheck;
@@ -33,11 +34,12 @@ class PhpAdapter implements AdapterInterface
         $queue = (new UnsupportedQueueCheck())->run();
         $tests = (new UnsupportedTestsCheck())->run();
         $security = (new SecurityCheck($this->config))->run();
+        $maintenance = (new MaintenanceCheck($this->config))->run();
 
         return (new StatusReport(
             name: $this->config->name,
             environment: $this->config->environment,
-            status: $this->statusRunner->overallStatus([$database, $redis, $scheduler, $queue, $tests, $security]),
+            status: $this->statusRunner->overallStatus([$database, $redis, $scheduler, $queue, $tests, $security, $maintenance]),
             checkedAt: CarbonImmutable::now(),
             database: $database,
             redis: $redis,
@@ -45,6 +47,7 @@ class PhpAdapter implements AdapterInterface
             queue: $queue,
             tests: $tests,
             security: $security,
+            maintenance: $maintenance,
         ))->toArray();
     }
 

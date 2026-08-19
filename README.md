@@ -191,14 +191,25 @@ Feeds the `security` section on `/status` (issues + 0–100 score).
 
 | Key | Default | Meaning |
 |-----|---------|---------|
-| `composer_audit` | `false` | Laravel: run `composer audit` (slow; opt-in) |
-| `php_unsupported_below` | `8.2.0` | PHP below this → issue |
-| `php_eol_below` | `8.1.0` | PHP below this → stronger issue |
 | `public_url` | `null` | Host for SSL check (Laravel falls back to `APP_URL`) |
 | `public_path` | `null` | Plain PHP: path to public dir (for HTTP checks) |
 | `ssl_check` | `true` | Outbound TLS check against public URL |
 | `ssl_expiry_warn_days` | `14` | Warn when cert expires within N days |
 | `ssl_timeout_seconds` | `3.0` | SSL probe timeout |
+
+### `maintenance`
+
+Reports supported-stack risks separately from security posture. Composer advisories and PHP/Laravel support issues affect the maintenance score; ordinary version updates do not.
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `composer_audit` | `true` | Run cached Composer security audit |
+| `composer_audit_cache_seconds` | `86400` | Maximum age of cached audit results |
+| `php_unsupported_below` | `8.2.0` | PHP below this → warning |
+| `php_eol_below` | `8.1.0` | PHP below this → error |
+| `laravel_security_supported_majors` | `[11, 12]` | Configurable supported Laravel major versions |
+
+PHP EOL and Composer audit now live under `maintenance`, not `security`.
 
 ### `errors` (Laravel)
 

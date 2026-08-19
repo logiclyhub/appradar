@@ -8,7 +8,6 @@ use AppRadar\Agent\Data\SecurityIssueCollection;
 use AppRadar\Agent\Data\SecurityStatus;
 use AppRadar\Agent\Php\Checks\Security\DatabasePasswordProbe;
 use AppRadar\Agent\Php\Checks\Security\PhpDisplayErrorsProbe;
-use AppRadar\Agent\Php\Checks\Security\PhpVersionEolProbe;
 use AppRadar\Agent\Php\Checks\Security\PublicSensitiveFilesProbe;
 use AppRadar\Agent\Php\Checks\Security\RedisPasswordProbe;
 use AppRadar\Agent\Php\Checks\Security\SslCertificateProbe;
@@ -42,7 +41,6 @@ class SecurityCheck implements StatusCheckInterface
     {
         return [
             new PhpDisplayErrorsProbe($context),
-            new PhpVersionEolProbe($context),
             new DatabasePasswordProbe($context),
             new RedisPasswordProbe($context),
             new PublicSensitiveFilesProbe($context),

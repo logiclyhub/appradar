@@ -23,6 +23,7 @@ class StatusReport implements Arrayable, JsonSerializable
         public readonly QueueStatus $queue,
         public readonly TestsStatus $tests,
         public readonly SecurityStatus $security,
+        public readonly MaintenanceStatus $maintenance,
     ) {
     }
 
@@ -44,6 +45,9 @@ class StatusReport implements Arrayable, JsonSerializable
             security: isset($payload['security']) && is_array($payload['security'])
                 ? SecurityStatus::fromArray($payload['security'])
                 : SecurityStatus::clean(),
+            maintenance: isset($payload['maintenance']) && is_array($payload['maintenance'])
+                ? MaintenanceStatus::fromArray($payload['maintenance'])
+                : MaintenanceStatus::clean(),
         );
     }
 
@@ -59,6 +63,7 @@ class StatusReport implements Arrayable, JsonSerializable
             QueueStatus::key() => $this->queue,
             TestsStatus::key() => $this->tests,
             SecurityStatus::key() => $this->security,
+            MaintenanceStatus::key() => $this->maintenance,
         ];
     }
 
@@ -78,6 +83,7 @@ class StatusReport implements Arrayable, JsonSerializable
             'queue' => $this->queue->toArray(),
             'tests' => $this->tests->toArray(),
             'security' => $this->security->toArray(),
+            'maintenance' => $this->maintenance->toArray(),
         ];
     }
 
